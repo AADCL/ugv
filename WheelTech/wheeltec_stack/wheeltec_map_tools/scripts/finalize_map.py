@@ -2,6 +2,7 @@
 import argparse
 import copy
 import datetime
+import filecmp
 import os
 import shutil
 import subprocess
@@ -96,6 +97,7 @@ def main():
 
     bringup_dir = rospack_find("wheeltec_system_bringup")
     tools_dir = rospack_find("wheeltec_map_tools")
+    mapper_dir = rospack_find("wheeltec_pointcloud_mapper")
 
     source_pcd = args.source or os.path.join(
         map_dir, "filtered_camera_init.pcd"
@@ -121,20 +123,43 @@ def main():
     public_pcd = os.path.join(map_dir, "public_map.pcd")
     terrain_ground_raw = os.path.join(map_dir, "terrain_ground_camera_init.pcd")
     terrain_obstacle_raw = os.path.join(map_dir, "terrain_obstacles_camera_init.pcd")
+    terrain_ground_static_raw = os.path.join(
+        map_dir, "terrain_ground_static_camera_init.pcd"
+    )
+    terrain_obstacle_static_raw = os.path.join(
+        map_dir, "terrain_obstacles_static_camera_init.pcd"
+    )
     terrain_ground_map = os.path.join(map_dir, "terrain_ground_map.pcd")
     terrain_obstacle_map = os.path.join(map_dir, "terrain_obstacles_map.pcd")
     terrain_2p5d_yaml = os.path.join(map_dir, "terrain_2p5d.yaml")
 
+    if not os.path.isfile(source_pcd):
+        raise FileNotFoundError(
+            "Filtered source PCD not found: " + source_pcd
+        )
+
     if not os.path.isfile(raw_pcd) or args.replace_raw:
-        if not os.path.isfile(source_pcd):
-            raise FileNotFoundError(
-                "Filtered source PCD not found: " + source_pcd
-            )
         shutil.copy2(source_pcd, raw_pcd)
         print("[OK] archived raw PCD -> " + raw_pcd)
+    elif not filecmp.cmp(source_pcd, raw_pcd, shallow=False):
+        raise RuntimeError(
+            "Filtered PCD differs from the archived raw PCD; refusing to mix "
+            "mapping sessions. Re-run with --replace-raw to use the current map."
+        )
     else:
-        print("[KEEP] existing raw PCD -> " + raw_pcd)
-        print("       use --replace-raw only when intentionally replacing it")
+        print("[KEEP] existing raw PCD is identical to filtered source -> " + raw_pcd)
+
+    mapper_profile = load_yaml(os.path.join(
+        mapper_dir, "config", "mapper.yaml"
+    ))
+    try:
+        static_gate_voxel_size = float(
+            mapper_profile["map"]["voxel_size"]
+        )
+    except (KeyError, TypeError, ValueError):
+        raise RuntimeError(
+            "map/voxel_size is missing from pointcloud mapper config"
+        )
 
     geometry = load_yaml(geometry_yaml)
     tf_cfg = geometry["odom_to_camera_init"]
@@ -169,12 +194,26 @@ def main():
         )
 
         if args.terrain:
-            for source, output in (
-                (terrain_ground_raw, terrain_ground_map),
-                (terrain_obstacle_raw, terrain_obstacle_map),
+            for source, gated in (
+                (terrain_ground_raw, terrain_ground_static_raw),
+                (terrain_obstacle_raw, terrain_obstacle_static_raw),
             ):
                 if not os.path.isfile(source):
                     raise FileNotFoundError("Terrain classified PCD not found: " + source)
+                run(
+                    ["rosrun", "wheeltec_map_tools", "pcd_static_gate_node"]
+                    + private_args({
+                        "authority_pcd": raw_pcd,
+                        "input_pcd": source,
+                        "output_pcd": gated,
+                        "voxel_size": static_gate_voxel_size,
+                    })
+                )
+
+            for source, output in (
+                (terrain_ground_static_raw, terrain_ground_map),
+                (terrain_obstacle_static_raw, terrain_obstacle_map),
+            ):
                 classified_transform = copy.deepcopy(transform_params)
                 classified_transform["input_pcd"] = source
                 classified_transform["output_pcd"] = output
@@ -259,9 +298,20 @@ def main():
                 "terrain_cost_map_yaml": "terrain_cost.yaml" if args.terrain else None,
                 "terrain_ground_pcd": "terrain_ground_map.pcd" if args.terrain else None,
                 "terrain_obstacle_pcd": "terrain_obstacles_map.pcd" if args.terrain else None,
+                "terrain_ground_static_source": (
+                    "terrain_ground_static_camera_init.pcd" if args.terrain else None
+                ),
+                "terrain_obstacle_static_source": (
+                    "terrain_obstacles_static_camera_init.pcd" if args.terrain else None
+                ),
                 "terrain_2p5d_yaml": "terrain_2p5d.yaml" if args.terrain else None,
             },
             "terrain_classification": args.terrain,
+            "static_authority": {
+                "pcd": "raw_camera_init.pcd",
+                "voxel_size": static_gate_voxel_size,
+                "policy": "classified terrain voxel must exist in final Bayesian map",
+            } if args.terrain else None,
             "geometry_snapshot": geometry,
             "map_generation": profile_snapshot,
         }

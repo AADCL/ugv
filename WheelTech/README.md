@@ -28,9 +28,9 @@ WheelTech/
 │   ├── wheeltec_navigation/        # TEB 参数与导航日志
 │   └── fast_lio_localization/      # FAST-LIO 地图定位
 └── docs/
-    ├── 轮趣四轮差速机器人_开发实施文档_V4.3.md
-    ├── 轮趣四轮差速机器人_使用文档_V4.3.md
-    └── 轮趣四轮差速机器人_详细信息表_V4.3.md
+    ├── 轮趣四轮差速机器人_开发实施文档_V4.5.md
+    ├── 轮趣四轮差速机器人_使用文档_V4.5.md
+    └── 轮趣四轮差速机器人_详细信息表_V4.5.md
 ```
 
 `inspect/`、压缩包、构建产物和 SSH 文件只用于本地开发，不应上传到 GitHub。
@@ -89,7 +89,7 @@ roslaunch wheeltec_system_bringup wheeltec_mapping.launch \
 rosrun wheeltec_map_tools finalize_map.py factory_a
 ```
 
-该工具读取保存的原始与分类 PCD，生成 NDT/PGM 兼容资产以及 `terrain_2p5d.yaml` 和高程、坡度、粗糙度、台阶、代价、置信度六层地图。地图保存不依赖手动 finish 服务。
+该工具先确认 `filtered_camera_init.pcd` 与归档的 `raw_camera_init.pcd` 属于同一次建图，再以最终贝叶斯静态 PCD 按 `0.05 m` 体素门控分类点云，随后生成 NDT/PGM 兼容资产以及 `terrain_2p5d.yaml` 和高程、坡度、粗糙度、台阶、代价、置信度六层地图。地图保存不依赖手动 finish 服务。
 
 ## 定位与导航
 
@@ -112,4 +112,4 @@ roslaunch wheeltec_navigation navigation_teb.launch \
 - 点云过滤结果只用于地图交付，不反馈到 FAST-LIO 前端。
 - `self_filter` 在实测边界确认前保持关闭。
 
-完整的逐文件复制、修改、编译和验收流程见 `docs/轮趣四轮差速机器人_开发实施文档_V4.3.md`；日常命令见使用文档，全部参数见详细信息表。V4.3 正式链路为 PGM 占据、保存高程坡度代价、实时高程相对障碍、GlobalPlanner 与 TEB，不提供 DWA；当前目标是平地和连续坡道路段，楼梯语义不在本版本验收范围。
+完整的逐文件复制、修改、编译和验收流程见 `docs/轮趣四轮差速机器人_开发实施文档_V4.5.md`；日常命令见使用文档，全部参数见详细信息表。V4.5 正式链路为 PGM 占据、保存高程坡度代价、实时高程相对障碍、GlobalPlanner 与 TEB，不提供 DWA；当前目标是平地和连续坡道路段，楼梯语义不在本版本验收范围。

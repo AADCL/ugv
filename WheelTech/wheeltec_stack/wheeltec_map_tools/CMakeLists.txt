@@ -42,6 +42,17 @@ target_link_libraries(
   ${PCL_LIBRARIES}
 )
 
+add_executable(
+  pcd_static_gate_node
+  src/pcd_static_gate.cpp
+)
+
+target_link_libraries(
+  pcd_static_gate_node
+  ${catkin_LIBRARIES}
+  ${PCL_LIBRARIES}
+)
+
 catkin_install_python(
   PROGRAMS
     scripts/finalize_map.py
