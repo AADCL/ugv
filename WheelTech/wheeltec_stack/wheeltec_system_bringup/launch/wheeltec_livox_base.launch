@@ -1,0 +1,7 @@
+<launch>
+  <!-- WheelTech four-wheel differential perception/base stack without FAST-LIO. -->
+  <include file="$(find livox_ros_driver2)/launch_ROS1/msg_MID360.launch" />
+  <include file="$(find turn_on_wheeltec_robot)/launch/include/base_serial.launch">
+    <arg name="odom_frame_id" value="wheel_odom" />
+  </include>
+</launch>

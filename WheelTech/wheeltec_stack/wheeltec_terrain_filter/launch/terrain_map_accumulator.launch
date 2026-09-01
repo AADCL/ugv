@@ -1,0 +1,24 @@
+<launch>
+  <arg name="map_name" default="current_mapping" />
+  <!-- Persist raw Patchwork++ classes. Safety filtering remains a separate live chain. -->
+  <arg name="ground_topic" default="/terrain/patchwork_ground" />
+  <arg name="obstacle_topic" default="/terrain/patchwork_nonground" />
+  <arg name="odom_topic" default="/Odometry" />
+
+  <node pkg="wheeltec_terrain_filter"
+        type="terrain_map_accumulator_node"
+        name="wheeltec_terrain_map_accumulator"
+        output="screen">
+    <remap from="ground" to="$(arg ground_topic)" />
+    <remap from="obstacles" to="$(arg obstacle_topic)" />
+    <remap from="odom" to="$(arg odom_topic)" />
+    <param name="voxel_size" value="0.10" />
+    <param name="output_ground_path"
+           value="$(env HOME)/livox_fastlio/maps/$(arg map_name)/terrain_ground_camera_init.pcd" />
+    <param name="output_obstacle_path"
+           value="$(env HOME)/livox_fastlio/maps/$(arg map_name)/terrain_obstacles_camera_init.pcd" />
+    <param name="save_on_shutdown" value="true" />
+    <param name="min_obstacle_frames" value="5" />
+    <param name="min_observation_span" value="1.0" />
+  </node>
+</launch>

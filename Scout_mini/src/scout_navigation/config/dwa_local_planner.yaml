@@ -1,0 +1,65 @@
+DWAPlannerROS:
+  # -------------------------
+  # 速度限制
+  # -------------------------
+  max_vel_x: 0.35
+  min_vel_x: 0.00
+
+  max_vel_y: 0.0
+  min_vel_y: 0.0
+
+  max_vel_trans: 0.35
+  min_vel_trans: 0.05
+
+  max_vel_theta: 1.0
+  min_vel_theta: 0.25
+
+  # 第一阶段不允许倒车，以降低初次调试风险。
+  penalize_negative_x: true
+
+  # -------------------------
+  # 加速度限制
+  # -------------------------
+  acc_lim_x: 0.50
+  acc_lim_y: 0.0
+  acc_lim_theta: 2.50
+  acc_lim_trans: 0.50
+
+  # -------------------------
+  # 轨迹模拟
+  # -------------------------
+  sim_time: 3.0
+  sim_granularity: 0.05
+  angular_sim_granularity: 0.05
+  vx_samples: 12
+  vy_samples: 1
+  vth_samples: 60
+
+  # -------------------------
+  # 轨迹评分
+  # -------------------------
+  path_distance_bias: 32.0
+  goal_distance_bias: 20.0
+  occdist_scale: 0.05
+
+  forward_point_distance: 0.30
+  stop_time_buffer: 0.30
+
+  scaling_speed: 0.25
+  max_scaling_factor: 0.20
+
+  # -------------------------
+  # 到点条件
+  # -------------------------
+  xy_goal_tolerance: 0.15
+  yaw_goal_tolerance: 0.15
+  latch_xy_goal_tolerance: true
+
+  # -------------------------
+  # 其他
+  # -------------------------
+  prune_plan: true
+
+  publish_traj_pc: true
+  publish_cost_grid_pc: true
+

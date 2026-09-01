@@ -1,0 +1,39 @@
+<launch>
+
+  <!-- ====================================================== -->
+  <!-- FAST-LIO 标准化车体里程计                              -->
+  <!--                                                       -->
+  <!-- 输入：TF                                               -->
+  <!--       odom -> base_link                                -->
+  <!--                                                       -->
+  <!-- 输出：                                                 -->
+  <!--       /fastlio_odom                                    -->
+  <!--                                                       -->
+  <!-- message：nav_msgs/Odometry                             -->
+  <!-- ====================================================== -->
+
+  <node
+      pkg="scout_pose_adapter"
+      type="tf_to_odom.py"
+      name="scout_pose_adapter"
+      output="screen">
+
+    <param
+        name="parent_frame"
+        value="odom" />
+
+    <param
+        name="child_frame"
+        value="base_link" />
+
+    <param
+        name="output_topic"
+        value="/fastlio_odom" />
+
+    <param
+        name="publish_rate"
+        value="20.0" />
+
+  </node>
+
+</launch>

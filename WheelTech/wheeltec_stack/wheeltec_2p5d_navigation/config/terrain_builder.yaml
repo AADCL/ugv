@@ -1,0 +1,25 @@
+resolution: 0.10
+padding_m: 0.50
+min_points_per_cell: 1
+ground_height_percentile: 0.20
+max_fill_radius_cells: 4
+min_fill_neighbors: 3
+fit_radius_m: 0.30
+smooth_height_delta_m: 0.12
+
+# 舒适坡度以上开始增加代价；达到物理上限后禁止通行。
+preferred_slope_deg: 4.0
+max_slope_deg: 22.0
+max_step_height_m: 0.08
+max_roughness_m: 0.050
+obstacle_min_relative_height_m: 0.08
+obstacle_max_relative_height_m: 1.50
+min_obstacle_points_per_cell: 3
+min_lethal_neighbors: 4
+
+slope_cost_weight: 0.55
+roughness_cost_weight: 0.20
+step_cost_weight: 0.25
+
+# 只消除点云离散缝隙；车体尺寸由规划器足迹检查，避免重复膨胀。
+obstacle_inflation_m: 0.05

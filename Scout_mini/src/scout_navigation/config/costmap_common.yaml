@@ -1,0 +1,14 @@
+# Scout Mini footprint
+# 官方裸底盘尺寸：612 mm x 580 mm
+# 下面先按 base_link 位于车体几何中心配置。
+# 实车导航前必须重新测量包含防撞杆、支架、计算平台等在内的最大外轮廓。
+
+footprint:
+  - [ 0.370,  0.295]
+  - [ 0.370, -0.295]
+  - [-0.300, -0.295]
+  - [-0.300,  0.295]
+
+footprint_padding: 0.03
+
+transform_tolerance: 0.5

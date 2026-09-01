@@ -1,0 +1,23 @@
+<launch>
+
+  <!-- ====================================================== -->
+  <!-- WheelTech four-wheel differential 整机一键启动                                -->
+  <!-- ====================================================== -->
+
+  <!-- 1. Livox Mid-360 -->
+  <include file="$(find livox_ros_driver2)/launch_ROS1/msg_MID360.launch" />
+
+  <!-- 2. FAST-LIO -->
+  <include file="$(find wheeltec_system_bringup)/launch/fastlio_local_odom.launch">
+    <arg name="rviz" value="false" />
+  </include>
+
+  <!-- 3. WheelTech TF Manager -->
+  <include file="$(find wheeltec_tf_manager)/launch/tf_manager.launch" />
+
+  <!-- 4. WheelTech four-wheel differential serial chassis -->
+  <include file="$(find turn_on_wheeltec_robot)/launch/include/base_serial.launch">
+    <arg name="odom_frame_id" value="wheel_odom" />
+  </include>
+
+</launch>

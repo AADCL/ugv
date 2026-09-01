@@ -1,0 +1,62 @@
+input_cloud: /cloud_registered
+input_odom: /Odometry
+static_scan_topic: /scout/static_scan
+static_map_topic: /scout/static_map_cloud
+dynamic_topic: /scout/dynamic_points
+
+# The input is already deskewed and registered by FAST-LIO. These filters only
+# affect the exported map; they never feed points back into FAST-LIO.
+min_range: 0.50
+max_range: 50.0
+scan_voxel_size: 0.05
+
+radius_filter:
+  enable: true
+  radius: 0.15
+  min_neighbors: 2
+
+# Coordinates are in the FAST-LIO body frame obtained from /Odometry.
+# Measure these limits on the real robot before enabling this filter.
+self_filter:
+  enable: false
+  min_x: -0.55
+  max_x: 0.55
+  min_y: -0.45
+  max_y: 0.45
+  min_z: -0.40
+  max_z: 0.25
+
+dynamic_filter:
+  enable: true
+  # Lightweight 3D Bayesian occupancy grid. Hits raise occupancy confidence;
+  # rays that pass through a voxel lower it and remove departed objects.
+  # This coarse grid is not the output-map resolution.
+  voxel_size: 0.20
+  hit_probability: 0.70
+  miss_probability: 0.40
+  occupied_probability: 0.72
+  clearing_probability: 0.35
+  min_hit_scans: 8
+  min_observation_span: 2.0
+  # Trace one in every four filtered points to control Jetson CPU load.
+  ray_stride: 4
+  max_clearing_range: 20.0
+  ray_endpoint_margin: 0.30
+  candidate_timeout: 5.0
+  cleanup_period: 1.0
+  max_voxels: 2000000
+
+# Confirmed points are accumulated in this independent fine grid. Keeping this
+# separate from dynamic_filter/voxel_size avoids regular holes in floors/walls.
+map:
+  voxel_size: 0.05
+  max_voxels: 5000000
+  autosave_period: 30.0
+  save_on_shutdown: true
+
+map_publish_period: 2.0
+publish_dynamic_points: false
+max_odom_age: 0.20
+
+# May be overridden by pointcloud_mapper.launch.
+output_path: /tmp/filtered_camera_init.pcd

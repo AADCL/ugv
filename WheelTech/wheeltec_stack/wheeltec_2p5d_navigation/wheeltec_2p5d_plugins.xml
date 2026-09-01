@@ -1,0 +1,13 @@
+<library path="lib/libwheeltec_2p5d_plugins">
+  <class name="wheeltec_2p5d_navigation/TerrainGlobalPlanner"
+         type="wheeltec_2p5d_navigation::TerrainGlobalPlanner"
+         base_class_type="nav_core::BaseGlobalPlanner">
+    <description>A* planner whose edge cost and validity come from persistent 2.5D terrain layers.</description>
+  </class>
+  <class name="wheeltec_2p5d_navigation/TerrainCostmapLayer"
+         type="wheeltec_2p5d_navigation::TerrainCostmapLayer"
+         base_class_type="costmap_2d::Layer">
+    <description>Projects persistent 2.5D traversability into a move_base costmap.</description>
+  </class>
+</library>
+

@@ -1,0 +1,55 @@
+<launch>
+
+    <!-- ====================================================== -->
+    <!-- Intel RealSense D435i                                  -->
+    <!-- 用途：RGB目标识别 + 深度测距 + 深度避障               -->
+    <!-- ====================================================== -->
+
+    <include file="$(find realsense2_camera)/launch/rs_camera.launch">
+
+        <!-- RGB -->
+        <arg name="enable_color" value="true"/>
+
+        <!-- Depth -->
+        <arg name="enable_depth" value="true"/>
+
+        <!-- 当前不使用 D435i IMU -->
+        <arg name="enable_accel" value="false"/>
+        <arg name="enable_gyro" value="false"/>
+
+        <!-- 深度对齐到 RGB -->
+        <arg name="align_depth" value="true"/>
+
+        <!-- 不生成 PointCloud2，减少 Jetson 负载 -->
+        <arg name="enable_pointcloud" value="false"/>
+
+        <!-- 发布 RealSense 内部 TF -->
+        <arg name="publish_tf" value="true"/>
+        <arg name="tf_publish_rate" value="0"/>
+
+    </include>
+
+
+    <!-- ====================================================== -->
+    <!-- D435i 相对 base_link 的固定安装外参                    -->
+    <!-- ====================================================== -->
+
+    <!--
+        参数顺序：
+        x y z yaw pitch roll parent child
+
+        当前安装：
+        x = 0.27 m
+        y = 0.00 m
+        z = 0.10 m
+
+        D435i 倒装，镜头朝车头：
+        roll = pi
+    -->
+
+    <node pkg="tf2_ros"
+          type="static_transform_publisher"
+          name="base_to_d435i"
+          args="0.27 0.00 0.10 0 0 0 base_link camera_link"/>
+
+</launch>

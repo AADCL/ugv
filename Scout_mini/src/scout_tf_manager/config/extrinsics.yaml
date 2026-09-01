@@ -1,0 +1,68 @@
+# ============================================================
+# Scout Mini TF configuration
+# ============================================================
+#
+# 坐标约定：
+#
+#   +X : 前
+#   +Y : 左
+#   +Z : 上
+#
+# 距离单位：m
+# 角度单位：degree
+#
+# 本文件当前只负责：
+#
+#   body -> base_link
+#
+# odom -> camera_init 已迁移到：
+#
+#   scout_system_bringup/config/scout_geometry.yaml
+#
+# 并由 geometry_tf_publisher.py 单独发布。
+#
+# ============================================================
+
+transforms:
+
+  # ==========================================================
+  # body -> base_link
+  #
+  # 这里记录容易测量的物理关系：
+  #
+  #   base_link -> body
+  #
+  # Mid-360 / FAST-LIO body：
+  #
+  #   位于 base_link 前方 0.25 m
+  #   位于 base_link 上方 0.20 m
+  #   Pitch = +45 deg
+  #
+  # FAST-LIO 已发布：
+  #
+  #   camera_init -> body
+  #
+  # 因此本节点不能发布：
+  #
+  #   base_link -> body
+  #
+  # publish_inverse=true 后，程序对完整刚体变换求逆，
+  # 最终实际发布：
+  #
+  #   body -> base_link
+  # ==========================================================
+
+  - name: body_to_base_link
+
+    parent: base_link
+    child: body
+
+    x: 0.25
+    y: 0.00
+    z: 0.20
+
+    roll_deg: 0.0
+    pitch_deg: 45.0
+    yaw_deg: 0.0
+
+    publish_inverse: true

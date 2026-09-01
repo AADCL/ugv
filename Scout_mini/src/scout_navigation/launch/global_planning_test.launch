@@ -1,0 +1,92 @@
+<launch>
+
+  <arg name="map_name" default="scout_map_01" />
+
+  <arg
+      name="map_dir"
+      default="$(env HOME)/livox_fastlio/maps/$(arg map_name)" />
+
+  <arg
+      name="nav_map_yaml"
+      default="$(arg map_dir)/map_raw.yaml" />
+
+  <!--
+    1. 导航专用 raw 静态地图。
+       不修改已有 localization launch 的 /map_2d。
+  -->
+  <node
+      pkg="map_server"
+      type="map_server"
+      name="scout_navigation_map_server"
+      args="$(arg nav_map_yaml)"
+      output="screen">
+
+    <remap from="map" to="/nav_static_map" />
+    <remap from="map_metadata" to="/nav_static_map_metadata" />
+
+  </node>
+
+  <!--
+    2. move_base 只用来建立 global costmap 和提供 make_plan service。
+       cmd_vel 强制重映射，阶段 A 不允许驱动车辆。
+  -->
+  <node
+      pkg="move_base"
+      type="move_base"
+      name="move_base"
+      output="screen">
+
+    <rosparam
+        command="load"
+        file="$(find scout_navigation)/config/move_base.yaml" />
+
+    <rosparam
+        command="load"
+        ns="global_costmap"
+        file="$(find scout_navigation)/config/costmap_common.yaml" />
+
+    <rosparam
+        command="load"
+        ns="global_costmap"
+        file="$(find scout_navigation)/config/global_costmap.yaml" />
+
+    <rosparam
+        command="load"
+        ns="local_costmap"
+        file="$(find scout_navigation)/config/costmap_common.yaml" />
+
+    <rosparam
+        command="load"
+        ns="local_costmap"
+        file="$(find scout_navigation)/config/local_costmap.yaml" />
+
+    <!-- 阶段 A 彻底关闭实时障碍层，避免把局部避障问题混入全局规划验证 -->
+    <param name="local_costmap/obstacle_layer/enabled" value="false" />
+
+    <rosparam
+        command="load"
+        file="$(find scout_navigation)/config/global_planner.yaml" />
+
+    <rosparam
+        command="load"
+        file="$(find scout_navigation)/config/dwa_local_planner.yaml" />
+
+    <!-- DWA 速度反馈 -->
+    <remap from="odom" to="/scout/odom" />
+
+    <!-- 安全锁：阶段 A 永远不把速度发给 Scout -->
+    <remap from="cmd_vel" to="/scout_navigation/cmd_vel_blocked" />
+
+  </node>
+
+  <!--
+    3. RViz Publish Point -> /move_base/make_plan
+  -->
+  <node
+      pkg="scout_navigation"
+      type="global_plan_tester.py"
+      name="scout_global_plan_tester"
+      output="screen" />
+
+</launch>
+

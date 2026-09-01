@@ -1,0 +1,35 @@
+# ROS/catkin generated files
+build/
+devel/
+install/
+logs/
+log/
+*.pyc
+__pycache__/
+
+# Runtime sensor and map data
+*.bag
+*.bag.active
+*.pcd
+*.pgm
+*.bt
+*.f32
+*.u8
+maps/
+test_bags/
+test_results/
+
+# Secrets and machine-local configuration
+.env
+.env.*
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+known_hosts
+
+# Editor/OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

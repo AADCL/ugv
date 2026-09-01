@@ -1,0 +1,56 @@
+<?xml version="1.0"?>
+<launch>
+  <!--
+    WheelTech + Orbbec Gemini 336L one-click camera bringup.
+
+    Translation was measured as 0.16 m forward and 0.08 m upward from base_link.
+    The camera is mounted level and faces straight forward, so roll/pitch/yaw
+    are all zero.
+  -->
+  <arg name="camera_name" default="camera"/>
+  <arg name="parent_frame" default="base_link"/>
+  <arg name="camera_frame" default="camera_link"/>
+
+  <!-- Camera optical-center pose in parent_frame: metres and radians. -->
+  <arg name="camera_x" default="0.16"/>
+  <arg name="camera_y" default="0.0"/>
+  <arg name="camera_z" default="0.08"/>
+  <arg name="camera_roll" default="0.0"/>
+  <arg name="camera_pitch" default="0.0"/>
+  <arg name="camera_yaw" default="0.0"/>
+  <arg name="publish_mount_tf" default="true"/>
+
+  <!-- Conservative defaults for continuous operation on Jetson NX. -->
+  <arg name="enable_color" default="true"/>
+  <arg name="enable_depth" default="true"/>
+  <arg name="enable_point_cloud" default="true"/>
+  <arg name="enable_colored_point_cloud" default="false"/>
+  <arg name="enable_left_ir" default="false"/>
+  <arg name="enable_right_ir" default="false"/>
+  <arg name="enable_accel" default="false"/>
+  <arg name="enable_gyro" default="false"/>
+
+  <include file="$(find orbbec_camera)/launch/gemini_330_series.launch">
+    <arg name="camera_name" value="$(arg camera_name)"/>
+    <arg name="publish_tf" value="true"/>
+    <arg name="tf_publish_rate" value="0.0"/>
+    <arg name="enable_frame_sync" value="true"/>
+    <arg name="enable_color" value="$(arg enable_color)"/>
+    <arg name="enable_depth" value="$(arg enable_depth)"/>
+    <arg name="enable_point_cloud" value="$(arg enable_point_cloud)"/>
+    <arg name="enable_colored_point_cloud" value="$(arg enable_colored_point_cloud)"/>
+    <arg name="enable_left_ir" value="$(arg enable_left_ir)"/>
+    <arg name="enable_right_ir" value="$(arg enable_right_ir)"/>
+    <arg name="enable_accel" value="$(arg enable_accel)"/>
+    <arg name="enable_gyro" value="$(arg enable_gyro)"/>
+    <arg name="enable_image_transport_plugins" value="false"/>
+  </include>
+
+  <!-- tf2_ros uses x y z yaw pitch roll, while the public launch API above is
+       named roll/pitch/yaw to avoid ambiguity. -->
+  <node if="$(arg publish_mount_tf)"
+        pkg="tf2_ros"
+        type="static_transform_publisher"
+        name="wheeltec_camera_mount_tf"
+        args="$(arg camera_x) $(arg camera_y) $(arg camera_z) $(arg camera_yaw) $(arg camera_pitch) $(arg camera_roll) $(arg parent_frame) $(arg camera_frame)"/>
+</launch>

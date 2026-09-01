@@ -1,0 +1,79 @@
+<launch>
+
+  <arg name="map_name" default="scout_map_01" />
+  <arg name="odom_topic" default="/scout/odom" />
+  <arg name="cmd_vel_topic" default="/cmd_vel" />
+  <arg name="obstacle_cloud_topic" default="/cloud_registered_body" />
+
+  <arg
+      name="map_dir"
+      default="$(env HOME)/livox_fastlio/maps/$(arg map_name)" />
+
+  <arg
+      name="nav_map_yaml"
+      default="$(arg map_dir)/map_raw.yaml" />
+
+  <!-- 1. 导航专用 raw 静态地图 -->
+  <node
+      pkg="map_server"
+      type="map_server"
+      name="scout_navigation_map_server"
+      args="$(arg nav_map_yaml)"
+      output="screen">
+
+    <remap from="map" to="/nav_static_map" />
+    <remap from="map_metadata" to="/nav_static_map_metadata" />
+
+  </node>
+
+  <!-- 2. move_base -->
+  <node
+      pkg="move_base"
+      type="move_base"
+      name="move_base"
+      output="screen">
+
+    <rosparam
+        command="load"
+        file="$(find scout_navigation)/config/move_base.yaml" />
+
+    <rosparam
+        command="load"
+        ns="global_costmap"
+        file="$(find scout_navigation)/config/costmap_common.yaml" />
+
+    <rosparam
+        command="load"
+        ns="global_costmap"
+        file="$(find scout_navigation)/config/global_costmap.yaml" />
+
+    <rosparam
+        command="load"
+        ns="local_costmap"
+        file="$(find scout_navigation)/config/costmap_common.yaml" />
+
+    <rosparam
+        command="load"
+        ns="local_costmap"
+        file="$(find scout_navigation)/config/local_costmap.yaml" />
+
+    <rosparam
+        command="load"
+        file="$(find scout_navigation)/config/global_planner.yaml" />
+
+    <rosparam
+        command="load"
+        file="$(find scout_navigation)/config/dwa_local_planner.yaml" />
+
+    <!-- 可通过 launch 参数覆盖 -->
+    <param
+        name="local_costmap/obstacle_layer/fastlio_cloud/topic"
+        value="$(arg obstacle_cloud_topic)" />
+
+    <remap from="odom" to="$(arg odom_topic)" />
+    <remap from="cmd_vel" to="$(arg cmd_vel_topic)" />
+
+  </node>
+
+</launch>
+

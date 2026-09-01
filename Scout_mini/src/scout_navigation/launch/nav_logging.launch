@@ -1,0 +1,13 @@
+<launch>
+
+  <arg name="tag" default="nav_test" />
+
+  <node
+      pkg="scout_navigation"
+      type="nav_log_session.sh"
+      name="nav_log_session"
+      output="screen"
+      args="$(arg tag)" />
+
+</launch>
+

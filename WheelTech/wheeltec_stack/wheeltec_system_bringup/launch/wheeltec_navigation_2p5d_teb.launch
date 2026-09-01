@@ -1,0 +1,14 @@
+<launch>
+  <arg name="map_name" default="wheeltec_map_01" />
+
+  <!-- Unchanged Livox + FAST-LIO + 3D PCD/NDT localization chain. -->
+  <include file="$(find wheeltec_system_bringup)/launch/wheeltec_localization.launch">
+    <arg name="map_name" value="$(arg map_name)" />
+  </include>
+
+  <!-- New persistent 2.5D global planner and TEB local planner. -->
+  <include file="$(find wheeltec_2p5d_navigation)/launch/navigation_2p5d_teb.launch">
+    <arg name="map_name" value="$(arg map_name)" />
+  </include>
+</launch>
+

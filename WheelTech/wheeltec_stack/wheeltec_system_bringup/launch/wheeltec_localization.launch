@@ -1,0 +1,42 @@
+<launch>
+
+	<arg name="map_name" default="wheeltec_map_01" />
+
+	<arg name="map_dir" default="$(env HOME)/livox_fastlio/maps/$(arg map_name)" />
+
+	<arg name="map_pcd" default="$(arg map_dir)/public_map.pcd" />
+
+	<arg name="map_yaml" default="$(arg map_dir)/map.yaml" />
+
+	<!-- 1. Mid-360 -->
+	<include file="$(find livox_ros_driver2)/launch_ROS1/msg_MID360.launch" />
+
+	<!-- 2. FAST-LIO local odometry -->
+	<include file="$(find wheeltec_system_bringup)/launch/fastlio_local_odom.launch" />
+
+	<!-- 3. 固定 TF：内部加载 wheeltec_geometry.yaml -->
+	<include file="$(find wheeltec_tf_manager)/launch/tf_manager.launch" />
+
+	<!-- 4. odom -> base_link Odometry -->
+	<include file="$(find wheeltec_pose_adapter)/launch/pose_adapter.launch" />
+
+	<!-- 5. body 点云 -> base_link 点云 -->
+	<include file="$(find wheeltec_cloud_adapter)/launch/cloud_adapter.launch" />
+
+	<!-- 6. PCD 全局重定位 -->
+	<include file="$(find wheeltec_system_bringup)/launch/wheeltec_relocalization.launch">
+		<arg name="map_pcd" value="$(arg map_pcd)" />
+	</include>
+
+	<!-- 7. 2D OccupancyGrid -->
+	<node pkg="map_server" type="map_server" name="wheeltec_map_server" args="$(arg map_yaml)" output="screen">
+
+		<remap from="map" to="/map_2d" />
+	</node>
+
+	<!-- 8. WheelTech serial chassis. /odom is wheel-speed feedback only. -->
+	<include file="$(find turn_on_wheeltec_robot)/launch/include/base_serial.launch">
+		<arg name="odom_frame_id" value="wheel_odom" />
+	</include>
+
+</launch>

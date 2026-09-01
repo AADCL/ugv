@@ -1,0 +1,21 @@
+global_frame: map
+robot_base_frame: base_link
+
+update_frequency: 2.0
+publish_frequency: 1.0
+transform_tolerance: 0.5
+
+rolling_window: false
+
+plugins:
+  - {name: static_layer,    type: "costmap_2d::StaticLayer"}
+  - {name: inflation_layer, type: "costmap_2d::InflationLayer"}
+
+static_layer:
+  map_topic: /nav_static_map
+  subscribe_to_updates: false
+
+inflation_layer:
+  inflation_radius: 0.45
+  cost_scaling_factor: 4.0
+

@@ -1,0 +1,19 @@
+<launch>
+  <arg name="map_name" default="current_mapping" />
+  <arg name="input_cloud" default="/cloud_registered" />
+  <arg name="input_odom" default="/Odometry" />
+  <arg name="output_path"
+       default="$(env HOME)/livox_fastlio/maps/$(arg map_name)/filtered_camera_init.pcd" />
+
+  <node pkg="scout_pointcloud_mapper"
+        type="pointcloud_mapper_node"
+        name="scout_pointcloud_mapper"
+        output="screen"
+        required="true">
+    <rosparam command="load"
+              file="$(find scout_pointcloud_mapper)/config/mapper.yaml" />
+    <param name="input_cloud" value="$(arg input_cloud)" />
+    <param name="input_odom" value="$(arg input_odom)" />
+    <param name="output_path" value="$(arg output_path)" />
+  </node>
+</launch>

@@ -1,0 +1,46 @@
+<launch>
+
+  <!--
+    WheelTech four-wheel differential TF Manager
+
+    TF 职责：
+
+      odom -> camera_init
+          geometry_tf_publisher.py
+          参数来自 wheeltec_geometry.yaml
+
+      camera_init -> body
+          FAST-LIO 动态发布
+
+      body -> base_link
+          tf_manager.py
+          参数来自 extrinsics.yaml
+  -->
+
+  <!-- body -> base_link -->
+  <node
+      pkg="wheeltec_tf_manager"
+      type="tf_manager.py"
+      name="wheeltec_tf_manager"
+      output="screen">
+
+    <rosparam
+        command="load"
+        file="$(find wheeltec_tf_manager)/config/extrinsics.yaml"/>
+
+  </node>
+
+  <!-- odom -> camera_init 参数 -->
+  <rosparam
+      command="load"
+      file="$(find wheeltec_system_bringup)/config/wheeltec_geometry.yaml"
+      ns="wheeltec_geometry" />
+
+  <!-- odom -> camera_init -->
+  <node
+      pkg="wheeltec_tf_manager"
+      type="geometry_tf_publisher.py"
+      name="wheeltec_geometry_tf_publisher"
+      output="screen" />
+
+</launch>

@@ -1,0 +1,13 @@
+# Scout Mini 机器人/地图坐标配置
+# 本文件是 odom -> camera_init 的唯一真值源。
+# 不要在其他 launch、脚本或 pcl_transform 命令中再次手写这些数值。
+
+odom_to_camera_init:
+  x: 0.25
+  y: 0.00
+  z: 0.20
+
+  roll_deg: 0.0
+  pitch_deg: 45.0
+  yaw_deg: 0.0
+

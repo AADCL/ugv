@@ -1,0 +1,167 @@
+TebLocalPlannerROS:
+  # ============================================================
+  # Scout Mini + FAST-LIO / ROS1 Noetic TEB 第一阶段基线
+  # 目标：先稳定替换 DWA；保留 0.35 m/s 线速度上限；不允许主动倒车。
+  # 第一阶段先关闭 homotopy，确认基础 TEB 正常后再打开双拓扑。
+  # ============================================================
+
+  # -------------------------
+  # Frames / Odometry
+  # -------------------------
+  odom_topic: /scout/odom
+  map_frame: map
+
+  # -------------------------
+  # Trajectory
+  # -------------------------
+  teb_autosize: true
+  dt_ref: 0.30
+  dt_hysteresis: 0.10
+  min_samples: 5
+  max_samples: 50
+
+  global_plan_overwrite_orientation: true
+  allow_init_with_backwards_motion: false
+
+  # 当前 local costmap 为 6 m x 6 m rolling window。
+  # 第一版看前方 3 m，避免像 DWA 一样只有很短的 rollout。
+  max_global_plan_lookahead_dist: 3.0
+  global_plan_prune_distance: 1.0
+
+  # -1 表示不强制把 global plan 采成 via points。
+  # 这样 TEB 在遇到障碍时有空间明显偏离全局路径做绕行。
+  global_plan_viapoint_sep: -1.0
+  via_points_ordered: false
+
+  exact_arc_length: false
+  feasibility_check_no_poses: 10
+
+  # 打开反馈，方便 rosbag 记录和后续诊断。
+  publish_feedback: true
+
+  # -------------------------
+  # Robot / Differential Drive
+  # -------------------------
+  max_vel_x: 0.35
+  max_vel_x_backwards: 0.00
+  max_vel_y: 0.0
+  max_vel_theta: 1.00
+
+  acc_lim_x: 0.50
+  acc_lim_theta: 2.50
+
+  # Scout Mini 在当前控制模型下按差速/滑移转向处理，可原地转向。
+  min_turning_radius: 0.0
+
+  # TEB 使用真实物理外轮廓；额外安全距离由 min_obstacle_dist 给出。
+  footprint_model:
+    type: "polygon"
+    vertices:
+      - [ 0.370,  0.295]
+      - [ 0.370, -0.295]
+      - [-0.300, -0.295]
+      - [-0.300,  0.295]
+
+  is_footprint_dynamic: false
+
+  # -------------------------
+  # Goal tolerance
+  # -------------------------
+  xy_goal_tolerance: 0.15
+  yaw_goal_tolerance: 0.15
+  free_goal_vel: false
+  complete_global_plan: true
+
+  # -------------------------
+  # Obstacles
+  # -------------------------
+  include_costmap_obstacles: true
+
+  # polygon footprint 已经包含车体尺寸，所以这里是车体边界到障碍物的期望净空。
+  # 初版给 15 cm，优先解决之前“蹭障碍”的问题。
+  min_obstacle_dist: 0.15
+
+  # 在最小净空之外继续给障碍一个软代价区，让轨迹更早开始绕。
+  inflation_dist: 0.35
+
+  costmap_obstacles_behind_robot_dist: 1.0
+  obstacle_poses_affected: 20
+
+  # 当前 PointCloud2 只是写入 costmap，没有障碍物速度估计，初版不要假装它是动态轨迹。
+  include_dynamic_obstacles: false
+
+  # 第一阶段不启用 costmap_converter，先减少变量和 CPU 开销。
+  costmap_converter_plugin: ""
+  costmap_converter_spin_thread: true
+  costmap_converter_rate: 5
+
+  # -------------------------
+  # Optimization
+  # -------------------------
+  no_inner_iterations: 5
+  no_outer_iterations: 4
+  optimization_activate: true
+  optimization_verbose: false
+  penalty_epsilon: 0.05
+
+  weight_max_vel_x: 2.0
+  weight_max_vel_theta: 1.0
+  weight_acc_lim_x: 1.0
+  weight_acc_lim_theta: 1.0
+
+  # 非完整约束；差速底盘必须保持较高。
+  weight_kinematics_nh: 1000.0
+
+  # 强烈偏好前进；同时 max_vel_x_backwards=0，第一阶段不让 TEB 主动倒车。
+  weight_kinematics_forward_drive: 1000.0
+  weight_kinematics_turning_radius: 1.0
+
+  # TEB 与 DWA 的一个关键区别：它显式优化时间。
+  # 先用 2.0，不一开始过度追求速度。
+  weight_optimaltime: 2.0
+  weight_shortest_path: 0.0
+
+  # 比默认更重视障碍安全距离，针对之前出现过的“蹭障碍”。
+  weight_obstacle: 80.0
+  weight_inflation: 0.50
+  weight_dynamic_obstacle: 10.0
+
+  # 第一阶段关闭 via point 约束，避免把 TEB 又强行拉回原 global plan。
+  weight_viapoint: 0.0
+  weight_adapt_factor: 2.0
+
+  # -------------------------
+  # Homotopy Class Planner
+  # -------------------------
+  # Phase 1：先 false，验证 TEB 基础链路、速度和碰撞距离。
+  # Phase 2：改为 true，同时保持 max_number_classes=2，形成“左绕/右绕”候选。
+  enable_homotopy_class_planning: false
+  enable_multithreading: true
+  simple_exploration: false
+  max_number_classes: 2
+
+  selection_cost_hysteresis: 1.0
+  selection_obst_cost_scale: 1.0
+  selection_alternative_time_cost: false
+
+  # 控制探索计算量；当前 local costmap 为 6 m x 6 m。
+  roadmap_graph_no_samples: 10
+  roadmap_graph_area_width: 3.0
+  h_signature_prescaler: 0.5
+  h_signature_threshold: 0.1
+  obstacle_keypoint_offset: 0.1
+  obstacle_heading_threshold: 0.45
+  visualize_hc_graph: true
+
+  # -------------------------
+  # TEB internal recovery
+  # -------------------------
+  shrink_horizon_backup: true
+  shrink_horizon_min_duration: 10.0
+
+  oscillation_recovery: true
+  oscillation_v_eps: 0.10
+  oscillation_omega_eps: 0.10
+  oscillation_recovery_min_duration: 10.0
+  oscillation_filter_duration: 10.0
+

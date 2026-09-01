@@ -1,0 +1,19 @@
+resolution: 0.05
+padding_m: 0.50
+
+# Patchwork++ classified ground is the height source; classified obstacles stay lethal.
+free_dilation_m: 0.10
+obstacle_inflation_m: 0.00
+
+# RAW map values are passed through as occupancy costs: 0 flat, 1..98 soft, 100 lethal, 255 unknown.
+terrain_cost/enable: true
+terrain_cost/fit_radius_m: 0.30
+terrain_cost/min_plane_cells: 4
+terrain_cost/max_height_delta_m: 0.40
+terrain_cost/flat_slope_deg: 3.0
+terrain_cost/max_slope_deg: 22.0
+terrain_cost/min_cost: 15
+terrain_cost/max_cost: 80
+
+# Wheel width 0.40 m, footprint padding 0.03 m; 0.25 m covers half-width plus margin.
+terrain_cost/dilation_m: 0.25

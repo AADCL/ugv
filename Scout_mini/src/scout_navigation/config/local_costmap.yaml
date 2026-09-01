@@ -1,0 +1,46 @@
+global_frame: odom
+robot_base_frame: base_link
+
+update_frequency: 8.0
+publish_frequency: 4.0
+transform_tolerance: 0.5
+
+rolling_window: true
+width: 6.0
+height: 6.0
+resolution: 0.05
+
+plugins:
+  - {name: obstacle_layer,  type: "costmap_2d::ObstacleLayer"}
+  - {name: inflation_layer, type: "costmap_2d::InflationLayer"}
+
+obstacle_layer:
+  enabled: true
+  footprint_clearing_enabled: true
+
+  observation_sources: fastlio_cloud
+
+  fastlio_cloud:
+    topic: /cloud_registered_body
+    sensor_frame: body
+    data_type: PointCloud2
+
+    marking: true
+    clearing: true
+
+    # 高度区间是第一轮测试值。
+    # 目标：去掉地面噪声，同时保留真正会碰撞车体的障碍物。
+    min_obstacle_height: 0.08
+    max_obstacle_height: 1.50
+
+    obstacle_range: 4.0
+    raytrace_range: 5.0
+
+    observation_persistence: 0.0
+    expected_update_rate: 0.0
+
+inflation_layer:
+  inflation_radius: 0.45
+  cost_scaling_factor: 4.0
+
+

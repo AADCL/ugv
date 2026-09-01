@@ -1,0 +1,13 @@
+# WheelTech four-wheel differential footprint
+# 用户实测底盘尺寸：500 mm x 400 mm。
+# base_link 位于车体几何中心，坐标约定为前左上。
+
+footprint:
+  - [ 0.250,  0.200]
+  - [ 0.250, -0.200]
+  - [-0.250, -0.200]
+  - [-0.250,  0.200]
+
+footprint_padding: 0.03
+
+transform_tolerance: 0.5

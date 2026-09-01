@@ -1,0 +1,46 @@
+<launch>
+
+  <!--
+    Scout Mini TF Manager
+
+    TF 职责：
+
+      odom -> camera_init
+          geometry_tf_publisher.py
+          参数来自 scout_geometry.yaml
+
+      camera_init -> body
+          FAST-LIO 动态发布
+
+      body -> base_link
+          tf_manager.py
+          参数来自 extrinsics.yaml
+  -->
+
+  <!-- body -> base_link -->
+  <node
+      pkg="scout_tf_manager"
+      type="tf_manager.py"
+      name="scout_tf_manager"
+      output="screen">
+
+    <rosparam
+        command="load"
+        file="$(find scout_tf_manager)/config/extrinsics.yaml"/>
+
+  </node>
+
+  <!-- odom -> camera_init 参数 -->
+  <rosparam
+      command="load"
+      file="$(find scout_system_bringup)/config/scout_geometry.yaml"
+      ns="scout_geometry" />
+
+  <!-- odom -> camera_init -->
+  <node
+      pkg="scout_tf_manager"
+      type="geometry_tf_publisher.py"
+      name="scout_geometry_tf_publisher"
+      output="screen" />
+
+</launch>

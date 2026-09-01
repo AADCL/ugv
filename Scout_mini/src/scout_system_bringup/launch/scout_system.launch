@@ -1,0 +1,22 @@
+<launch>
+
+  <!-- ====================================================== -->
+  <!-- Scout Mini 整机一键启动                                -->
+  <!-- ====================================================== -->
+
+  <!-- 1. Livox Mid-360 -->
+  <include file="$(find livox_ros_driver2)/launch_ROS1/msg_MID360.launch" />
+
+  <!-- 2. FAST-LIO -->
+  <include file="$(find fast_lio)/launch/mapping_mid360.launch" />
+
+  <!-- 3. Scout TF Manager -->
+  <include file="$(find scout_tf_manager)/launch/tf_manager.launch" />
+
+  <!-- 4. Scout Mini 普通轮底盘 -->
+  <include file="$(find scout_bringup)/launch/scout_mini_robot_base.launch">
+    <arg name="odom_topic_name" value="/scout/odom" />
+    <arg name="pub_tf" value="false" />
+  </include>
+
+</launch>

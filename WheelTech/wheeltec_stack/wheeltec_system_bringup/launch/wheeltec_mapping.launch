@@ -1,0 +1,29 @@
+<launch>
+
+  <arg name="map_name" default="current_mapping" />
+
+  <!-- 1. Mid-360 -->
+  <include file="$(find livox_ros_driver2)/launch_ROS1/msg_MID360.launch" />
+
+  <!-- 2. FAST-LIO odometry and registered cloud (native PCD saving disabled) -->
+  <include file="$(find wheeltec_system_bringup)/launch/fastlio_mapping_wheeltec.launch">
+    <arg name="rviz" value="false" />
+  </include>
+
+  <!-- 3. Filter registered scans and build the deliverable static PCD -->
+  <include file="$(find wheeltec_pointcloud_mapper)/launch/pointcloud_mapper.launch">
+    <arg name="map_name" value="$(arg map_name)" />
+  </include>
+
+  <!-- 4. TF -->
+  <include file="$(find wheeltec_tf_manager)/launch/tf_manager.launch" />
+
+  <!-- 5. odom -> base_link 发布为 /fastlio_odom -->
+  <include file="$(find wheeltec_pose_adapter)/launch/pose_adapter.launch" />
+
+  <!-- 6. WheelTech serial chassis. Wheel odometry stays on /odom and publishes no TF. -->
+  <include file="$(find turn_on_wheeltec_robot)/launch/include/base_serial.launch">
+    <arg name="odom_frame_id" value="wheel_odom" />
+  </include>
+
+</launch>

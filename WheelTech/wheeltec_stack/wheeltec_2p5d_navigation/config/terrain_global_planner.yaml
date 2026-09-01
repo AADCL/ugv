@@ -1,0 +1,7 @@
+TerrainGlobalPlanner:
+  terrain_weight: 4.0
+  uphill_weight: 2.0
+  downhill_weight: 1.0
+  max_edge_step_m: 0.08
+  footprint_radius_m: 0.32
+  snap_radius_m: 0.50

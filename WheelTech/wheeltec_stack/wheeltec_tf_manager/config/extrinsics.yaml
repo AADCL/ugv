@@ -1,0 +1,86 @@
+# ============================================================
+# WheelTech four-wheel differential TF configuration
+# ============================================================
+#
+# 坐标约定：
+#
+#   +X : 前
+#   +Y : 左
+#   +Z : 上
+#
+# 距离单位：m
+# 角度单位：degree
+#
+# 本文件当前只负责：
+#
+#   body -> base_link
+#
+# odom -> camera_init 已迁移到：
+#
+#   wheeltec_system_bringup/config/wheeltec_geometry.yaml
+#
+# 并由 geometry_tf_publisher.py 单独发布。
+#
+# ============================================================
+
+transforms:
+
+  # ==========================================================
+  # body -> base_link
+  #
+  # 这里记录容易测量的物理关系：
+  #
+  #   base_link -> body
+  #
+  # Mid-360 / FAST-LIO body：
+  #
+  #   位于 base_link 前方 0.10 m
+  #   位于 base_link 上方 0.15 m
+  #   雷达前向轴朝车头方向压低 20 deg；前左上坐标系中
+  #   对应 base_link -> body 的 Pitch = +20 deg。
+  #
+  # FAST-LIO 已发布：
+  #
+  #   camera_init -> body
+  #
+  # 因此本节点不能发布：
+  #
+  #   base_link -> body
+  #
+  # publish_inverse=true 后，程序对完整刚体变换求逆，
+  # 最终实际发布：
+  #
+  #   body -> base_link
+  # ==========================================================
+
+  - name: body_to_base_link
+
+    parent: base_link
+    child: body
+
+    x: 0.10
+    y: 0.00
+    z: 0.15
+
+    roll_deg: 0.0
+    pitch_deg: 20.0
+    yaw_deg: 0.0
+
+    publish_inverse: true
+
+  # 水平地形坐标系：原点与 Livox/FAST-LIO body 相同，姿态与 base_link 相同。
+  # Patchwork++ 必须在重力对齐坐标系中估计坡度，不能直接使用前倾20°的 body。
+  - name: base_link_to_terrain_sensor
+
+    parent: base_link
+    child: terrain_sensor
+
+    x: 0.10
+    y: 0.00
+    z: 0.15
+
+    roll_deg: 0.0
+    pitch_deg: 0.0
+    yaw_deg: 0.0
+
+    publish_inverse: false

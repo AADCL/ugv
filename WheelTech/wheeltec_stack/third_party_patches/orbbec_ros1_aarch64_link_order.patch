@@ -1,0 +1,12 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -285,7 +285,7 @@ add_dependencies(${PROJECT_NAME}_nodelet ${PROJECT_NAME}_generate_messages_cpp)
+ # Macro for adding executables
+ macro(add_orbbec_executable TARGET SOURCES)
+   add_executable(${TARGET} ${SOURCES})
+-  target_link_libraries(${TARGET} ${COMMON_LINK_LIBRARIES} ${PROJECT_NAME})
++  target_link_libraries(${TARGET} ${PROJECT_NAME} ${COMMON_LINK_LIBRARIES})
+   target_include_directories(${TARGET} PUBLIC ${COMMON_INCLUDE_DIRS})
+ endmacro()
+

@@ -1,0 +1,16 @@
+<launch>
+
+  <node
+      pkg="scout_cloud_adapter"
+      type="cloud_frame_adapter_node"
+      name="scout_cloud_adapter"
+      output="screen">
+
+    <param name="input_topic" value="/cloud_registered_body" />
+    <param name="output_topic" value="/cloud_registered_base" />
+    <param name="target_frame" value="base_link" />
+
+  </node>
+
+</launch>
+
