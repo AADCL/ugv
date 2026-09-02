@@ -1,4 +1,6 @@
-sensor_height: 0.15
+# terrain_sensor is at the Livox origin: 0.15 m above base_link, while
+# base_link is about 0.15 m above the floor on this chassis.
+sensor_height: 0.30
 
 mode: "czm"
 verbose: false

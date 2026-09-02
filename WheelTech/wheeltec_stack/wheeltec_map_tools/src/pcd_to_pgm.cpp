@@ -33,6 +33,14 @@ public:
         pnh_.param<double>("obstacle_max_z", obstacle_max_z_, 1.20);
         pnh_.param<double>("free_dilation_m", free_dilation_m_, 0.10);
         pnh_.param<double>("obstacle_inflation_m", obstacle_inflation_m_, 0.30);
+        pnh_.param<double>("classified_obstacle/ground_search_radius_m",
+                           classified_ground_search_radius_m_, 0.30);
+        pnh_.param<double>("classified_obstacle/min_relative_height_m",
+                           classified_obstacle_min_relative_height_m_, 0.08);
+        pnh_.param<double>("classified_obstacle/max_relative_height_m",
+                           classified_obstacle_max_relative_height_m_, 1.50);
+        pnh_.param("classified_obstacle/min_points_per_cell",
+                   classified_obstacle_min_points_per_cell_, 3);
         pnh_.param("terrain_cost/enable", terrain_cost_enable_, false);
         pnh_.param<double>("terrain_cost/fit_radius_m", terrain_fit_radius_m_, 0.30);
         pnh_.param("terrain_cost/min_plane_cells", terrain_min_plane_cells_, 4);
@@ -48,6 +56,13 @@ public:
         terrain_max_cost_ = std::max(terrain_min_cost_, std::min(98, terrain_max_cost_));
         terrain_max_slope_deg_ = std::max(
             terrain_flat_slope_deg_ + 0.1, terrain_max_slope_deg_);
+        classified_ground_search_radius_m_ = std::max(
+            resolution_, classified_ground_search_radius_m_);
+        classified_obstacle_max_relative_height_m_ = std::max(
+            classified_obstacle_min_relative_height_m_ + 0.01,
+            classified_obstacle_max_relative_height_m_);
+        classified_obstacle_min_points_per_cell_ = std::max(
+            1, classified_obstacle_min_points_per_cell_);
 
         generate();
     }
@@ -315,7 +330,6 @@ private:
             }
         };
         mark(ground, &floor_mask);
-        mark(obstacles, &obstacle_mask);
 
         for (const auto& p : ground.points)
         {
@@ -328,6 +342,61 @@ private:
             const int id = index(gx, gy);
             height_sum[id] += p.z;
             ++height_count[id];
+        }
+
+        // Patchwork++ nonground also contains ceilings and other high returns.
+        // Project only points supported by a nearby local ground estimate and
+        // lying inside the chassis-relevant relative-height band.
+        const int ground_search_radius = std::max(
+            1, static_cast<int>(std::ceil(
+                classified_ground_search_radius_m_ / resolution_)));
+        std::vector<uint32_t> supported_obstacle_count(cell_count, 0);
+        std::size_t supported_obstacle_points = 0;
+        for (const auto& p : obstacles.points)
+        {
+            if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z))
+                continue;
+            const int gx = static_cast<int>(std::floor((p.x - min_x_) / resolution_));
+            const int gy = static_cast<int>(std::floor((p.y - min_y_) / resolution_));
+            if (gx < 0 || gy < 0 || gx >= width_ || gy >= height_)
+                continue;
+
+            std::vector<double> local_ground;
+            for (int dy = -ground_search_radius; dy <= ground_search_radius; ++dy)
+            {
+                for (int dx = -ground_search_radius; dx <= ground_search_radius; ++dx)
+                {
+                    if (dx * dx + dy * dy > ground_search_radius * ground_search_radius)
+                        continue;
+                    const int nx = gx + dx;
+                    const int ny = gy + dy;
+                    if (nx < 0 || ny < 0 || nx >= width_ || ny >= height_)
+                        continue;
+                    const int neighbor_id = index(nx, ny);
+                    if (height_count[neighbor_id] == 0)
+                        continue;
+                    local_ground.push_back(
+                        height_sum[neighbor_id] / height_count[neighbor_id]);
+                }
+            }
+            if (local_ground.empty())
+                continue;
+            const std::size_t middle = local_ground.size() / 2;
+            std::nth_element(
+                local_ground.begin(), local_ground.begin() + middle, local_ground.end());
+            const double ground_z = local_ground[middle];
+            const double relative_height = p.z - ground_z;
+            if (relative_height < classified_obstacle_min_relative_height_m_ ||
+                relative_height > classified_obstacle_max_relative_height_m_)
+                continue;
+            ++supported_obstacle_count[index(gx, gy)];
+            ++supported_obstacle_points;
+        }
+        for (std::size_t i = 0; i < cell_count; ++i)
+        {
+            if (static_cast<int>(supported_obstacle_count[i]) >=
+                classified_obstacle_min_points_per_cell_)
+                obstacle_mask[i] = 1;
         }
 
         const int free_radius = static_cast<int>(std::round(free_dilation_m_ / resolution_));
@@ -451,6 +520,12 @@ private:
         writePgm(image);
         writeYaml();
         ROS_INFO("Classified terrain: ground=%zu obstacles=%zu", ground.size(), obstacles.size());
+        ROS_INFO("Relative-height obstacle filter: supported=%zu/%zu range=%.2f..%.2fm search=%.2fm min_points=%d",
+                 supported_obstacle_points, obstacles.size(),
+                 classified_obstacle_min_relative_height_m_,
+                 classified_obstacle_max_relative_height_m_,
+                 classified_ground_search_radius_m_,
+                 classified_obstacle_min_points_per_cell_);
         ROS_INFO("Map: %d x %d, resolution %.3f", width_, height_, resolution_);
     }
 
@@ -472,6 +547,10 @@ private:
     double obstacle_max_z_;
     double free_dilation_m_;
     double obstacle_inflation_m_;
+    double classified_ground_search_radius_m_;
+    double classified_obstacle_min_relative_height_m_;
+    double classified_obstacle_max_relative_height_m_;
+    int classified_obstacle_min_points_per_cell_;
     bool terrain_cost_enable_{false};
     double terrain_fit_radius_m_;
     int terrain_min_plane_cells_;
