@@ -44,7 +44,7 @@ roslaunch wheeltec_system_bringup wheeltec_localization.launch map_name:=site_01
 先启动定位，再启动导航：
 
 ```bash
-roslaunch wheeltec_system_bringup wheeltec_navigation_2p5d_teb.launch map_name:=site_01
+roslaunch wheeltec_navigation navigation_teb.launch map_name:=site_01
 ```
 
 初始软件限制采用保守值：前进 `0.30 m/s`、倒车 `0.15 m/s`、角速度 `0.8 rad/s`、线加速度 `0.2 m/s^2`、角加速度 `0.3 rad/s^2`。底盘驱动资料给出的物理上限为前后 `0.5 m/s`、角速度 `1.5 rad/s`；导航参数不得超过物理上限。

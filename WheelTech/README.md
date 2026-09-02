@@ -75,7 +75,7 @@ roslaunch wheeltec_system_bringup wheeltec_orbbec336l.launch
 ## 建图
 
 ```bash
-roslaunch wheeltec_system_bringup wheeltec_mapping_terrain.launch \
+roslaunch wheeltec_system_bringup wheeltec_mapping.launch \
   map_name:=factory_a
 ```
 
@@ -92,7 +92,7 @@ rosrun wheeltec_map_tools finalize_map.py factory_a --terrain
 ## 定位与导航
 
 ```bash
-roslaunch wheeltec_system_bringup wheeltec_navigation_2p5d_teb.launch \
+roslaunch wheeltec_navigation navigation_teb.launch \
   map_name:=factory_a
 ```
 

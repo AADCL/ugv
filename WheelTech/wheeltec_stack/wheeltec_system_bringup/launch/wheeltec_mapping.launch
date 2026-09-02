@@ -26,4 +26,17 @@
     <arg name="odom_frame_id" value="wheel_odom" />
   </include>
 
+  <!-- 7. The same registered cloud also produces the persistent 2.5D map. -->
+  <include file="$(find wheeltec_cloud_adapter)/launch/cloud_adapter.launch">
+    <arg name="node_name" value="wheeltec_terrain_cloud_adapter" />
+    <arg name="output_topic" value="/cloud_registered_terrain" />
+    <arg name="target_frame" value="terrain_sensor" />
+  </include>
+
+  <include file="$(find wheeltec_terrain_filter)/launch/wheeltec_terrain_filter.launch" />
+
+  <include file="$(find wheeltec_terrain_filter)/launch/terrain_map_accumulator.launch">
+    <arg name="map_name" value="$(arg map_name)" />
+  </include>
+
 </launch>
