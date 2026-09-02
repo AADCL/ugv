@@ -84,7 +84,7 @@ roslaunch wheeltec_system_bringup wheeltec_mapping.launch \
 完成采集后在建图终端按一次 `Ctrl+C`，映射器会在正常退出时再次保存 `filtered_camera_init.pcd`。随后单独生成交付地图：
 
 ```bash
-rosrun wheeltec_map_tools finalize_map.py factory_a --terrain
+rosrun wheeltec_map_tools finalize_map.py factory_a
 ```
 
 该工具读取保存的原始与分类 PCD，生成 NDT/PGM 兼容资产以及 `terrain_2p5d.yaml` 和高程、坡度、粗糙度、台阶、代价、置信度六层地图。地图保存不依赖手动 finish 服务。

@@ -73,11 +73,20 @@ def main():
         action="store_true",
         help="replace existing raw_camera_init.pcd from --source"
     )
-    parser.add_argument(
+    terrain_group = parser.add_mutually_exclusive_group()
+    terrain_group.add_argument(
         "--terrain",
+        dest="terrain",
         action="store_true",
-        help="build 2D maps from accumulated terrain ground/obstacle PCD files"
+        help="compatibility option; complete 2.5D output is already the default"
     )
+    terrain_group.add_argument(
+        "--legacy-2d-only",
+        dest="terrain",
+        action="store_false",
+        help="developer-only: skip classified terrain and 2.5D map generation"
+    )
+    parser.set_defaults(terrain=True)
     args = parser.parse_args()
 
     home = os.path.expanduser("~")
