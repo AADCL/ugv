@@ -1,0 +1,7 @@
+<library path="lib/libscout_2p5d_plugins">
+  <class name="scout_2p5d_navigation/TerrainCostmapLayer"
+         type="scout_2p5d_navigation::TerrainCostmapLayer"
+         base_class_type="costmap_2d::Layer">
+    <description>Projects persistent 2.5D traversability into a move_base costmap.</description>
+  </class>
+</library>

@@ -73,6 +73,20 @@ def main():
         action="store_true",
         help="replace existing raw_camera_init.pcd from --source"
     )
+    terrain_group = parser.add_mutually_exclusive_group()
+    terrain_group.add_argument(
+        "--terrain",
+        dest="terrain",
+        action="store_true",
+        help="compatibility option; complete 2.5D output is already the default"
+    )
+    terrain_group.add_argument(
+        "--legacy-2d-only",
+        dest="terrain",
+        action="store_false",
+        help="developer-only: skip classified terrain and 2.5D map generation"
+    )
+    parser.set_defaults(terrain=True)
     args = parser.parse_args()
 
     home = os.path.expanduser("~")
@@ -99,8 +113,17 @@ def main():
         tools_dir, "config", "scout_nav.yaml"
     )
 
+    terrain_cost_profile_path = os.path.join(
+        tools_dir, "config", "scout_terrain_cost.yaml"
+    )
+
     raw_pcd = os.path.join(map_dir, "raw_camera_init.pcd")
     public_pcd = os.path.join(map_dir, "public_map.pcd")
+    terrain_ground_raw = os.path.join(map_dir, "terrain_ground_camera_init.pcd")
+    terrain_obstacle_raw = os.path.join(map_dir, "terrain_obstacles_camera_init.pcd")
+    terrain_ground_map = os.path.join(map_dir, "terrain_ground_map.pcd")
+    terrain_obstacle_map = os.path.join(map_dir, "terrain_obstacles_map.pcd")
+    terrain_2p5d_yaml = os.path.join(map_dir, "terrain_2p5d.yaml")
 
     if not os.path.isfile(raw_pcd) or args.replace_raw:
         if not os.path.isfile(source_pcd):
@@ -145,6 +168,36 @@ def main():
             + private_args(transform_params)
         )
 
+        if args.terrain:
+            for source, output in (
+                (terrain_ground_raw, terrain_ground_map),
+                (terrain_obstacle_raw, terrain_obstacle_map),
+            ):
+                if not os.path.isfile(source):
+                    raise FileNotFoundError("Terrain classified PCD not found: " + source)
+                classified_transform = copy.deepcopy(transform_params)
+                classified_transform["input_pcd"] = source
+                classified_transform["output_pcd"] = output
+                run(
+                    ["rosrun", "scout_map_tools", "pcd_transform_node"]
+                    + private_args(classified_transform)
+                )
+
+            terrain_2p5d_dir = rospack_find("scout_2p5d_navigation")
+            terrain_2p5d_profile = load_yaml(os.path.join(
+                terrain_2p5d_dir, "config", "terrain_builder.yaml"
+            ))
+            terrain_2p5d_profile.update({
+                "ground_pcd": terrain_ground_map,
+                "obstacle_pcd": terrain_obstacle_map,
+                "output_yaml": terrain_2p5d_yaml,
+                "frame_id": "map",
+            })
+            run(
+                ["rosrun", "scout_2p5d_navigation", "terrain_map_builder_node"]
+                + private_args(terrain_2p5d_profile)
+            )
+
         profiles = [
             (
                 "raw",
@@ -160,6 +213,16 @@ def main():
             ),
         ]
 
+        if args.terrain:
+            profiles.append(
+                (
+                    "terrain_cost",
+                    terrain_cost_profile_path,
+                    os.path.join(map_dir, "terrain_cost.pgm"),
+                    os.path.join(map_dir, "terrain_cost.yaml"),
+                )
+            )
+
         profile_snapshot = {}
 
         for name, profile_path, output_pgm, output_yaml in profiles:
@@ -167,7 +230,12 @@ def main():
             profile_snapshot[name] = copy.deepcopy(cfg)
 
             params = copy.deepcopy(cfg)
-            params["input_pcd"] = public_pcd
+            if args.terrain:
+                params["classification_mode"] = True
+                params["ground_pcd"] = terrain_ground_map
+                params["obstacle_pcd"] = terrain_obstacle_map
+            else:
+                params["input_pcd"] = public_pcd
             params["output_pgm"] = output_pgm
             params["output_yaml"] = output_yaml
 
@@ -188,7 +256,12 @@ def main():
                 "public_pcd": "public_map.pcd",
                 "raw_map_yaml": "map_raw.yaml",
                 "nav_map_yaml": "map.yaml",
+                "terrain_cost_map_yaml": "terrain_cost.yaml" if args.terrain else None,
+                "terrain_ground_pcd": "terrain_ground_map.pcd" if args.terrain else None,
+                "terrain_obstacle_pcd": "terrain_obstacles_map.pcd" if args.terrain else None,
+                "terrain_2p5d_yaml": "terrain_2p5d.yaml" if args.terrain else None,
             },
+            "terrain_classification": args.terrain,
             "geometry_snapshot": geometry,
             "map_generation": profile_snapshot,
         }
@@ -207,6 +280,9 @@ def main():
         print("  raw PCD    : " + raw_pcd)
         print("  public PCD : " + public_pcd)
         print("  nav map    : " + os.path.join(map_dir, "map.yaml"))
+        if args.terrain:
+            print("  slope costs: " + os.path.join(map_dir, "terrain_cost.yaml"))
+            print("  2.5D map   : " + terrain_2p5d_yaml)
         print("  metadata   : " + metadata_path)
 
     finally:

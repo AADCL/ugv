@@ -66,3 +66,20 @@ transforms:
     yaw_deg: 0.0
 
     publish_inverse: true
+
+  # Gravity-aligned terrain frame at the Livox origin. Patchwork++ must not
+  # classify ground directly in the 45 degree pitched FAST-LIO body frame.
+  - name: base_link_to_terrain_sensor
+
+    parent: base_link
+    child: terrain_sensor
+
+    x: 0.25
+    y: 0.00
+    z: 0.20
+
+    roll_deg: 0.0
+    pitch_deg: 0.0
+    yaw_deg: 0.0
+
+    publish_inverse: false

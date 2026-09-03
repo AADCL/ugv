@@ -1,0 +1,26 @@
+global_frame: map
+robot_base_frame: base_link
+update_frequency: 2.0
+publish_frequency: 1.0
+transform_tolerance: 0.5
+rolling_window: false
+
+plugins:
+  - {name: static_layer, type: "costmap_2d::StaticLayer"}
+  - {name: terrain_slope_layer, type: "scout_2p5d_navigation/TerrainCostmapLayer"}
+  - {name: inflation_layer, type: "costmap_2d::InflationLayer"}
+
+static_layer:
+  map_topic: /nav_static_map
+  subscribe_to_updates: false
+  trinary_costmap: true
+  lethal_cost_threshold: 100
+  track_unknown_space: true
+
+terrain_slope_layer:
+  enabled: true
+  unknown_as_lethal: false
+
+inflation_layer:
+  inflation_radius: 0.10
+  cost_scaling_factor: 5.0

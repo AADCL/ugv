@@ -1,0 +1,24 @@
+resolution: 0.05
+padding_m: 0.50
+
+# Patchwork++ classified ground is the height source; classified obstacles stay lethal.
+free_dilation_m: 0.10
+obstacle_inflation_m: 0.00
+
+classified_obstacle/ground_search_radius_m: 0.30
+classified_obstacle/min_relative_height_m: 0.08
+classified_obstacle/max_relative_height_m: 1.50
+classified_obstacle/min_points_per_cell: 1
+
+# RAW map values are passed through as occupancy costs: 0 flat, 1..98 soft, 100 lethal, 255 unknown.
+terrain_cost/enable: true
+terrain_cost/fit_radius_m: 0.30
+terrain_cost/min_plane_cells: 4
+terrain_cost/max_height_delta_m: 0.40
+terrain_cost/flat_slope_deg: 3.0
+terrain_cost/max_slope_deg: 22.0
+terrain_cost/min_cost: 15
+terrain_cost/max_cost: 80
+
+# Scout Mini width is 0.585 m and footprint padding is 0.03 m.
+terrain_cost/dilation_m: 0.35

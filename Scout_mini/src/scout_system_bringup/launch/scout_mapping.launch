@@ -1,6 +1,8 @@
 <launch>
 
   <arg name="map_name" default="current_mapping" />
+  <!-- Formal mapping shares the Bayesian-filtered scan with every map output. -->
+  <arg name="terrain_input_topic" default="/scout/static_scan" />
 
   <!-- 1. Mid-360 -->
   <include file="$(find livox_ros_driver2)/launch_ROS1/msg_MID360.launch" />
@@ -25,6 +27,20 @@
   <include file="$(find scout_bringup)/launch/scout_mini_robot_base.launch">
     <arg name="odom_topic_name" value="/scout/odom" />
     <arg name="pub_tf" value="false" />
+  </include>
+
+  <!-- 7. PGM and elevation maps use the same static-point decision as the PCD. -->
+  <include file="$(find scout_cloud_adapter)/launch/cloud_adapter.launch">
+    <arg name="node_name" value="scout_terrain_cloud_adapter" />
+    <arg name="input_topic" value="$(arg terrain_input_topic)" />
+    <arg name="output_topic" value="/cloud_registered_terrain" />
+    <arg name="target_frame" value="terrain_sensor" />
+  </include>
+
+  <include file="$(find scout_terrain_filter)/launch/scout_terrain_filter.launch" />
+
+  <include file="$(find scout_terrain_filter)/launch/terrain_map_accumulator.launch">
+    <arg name="map_name" value="$(arg map_name)" />
   </include>
 
 </launch>

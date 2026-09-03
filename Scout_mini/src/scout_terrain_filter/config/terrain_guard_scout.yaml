@@ -1,0 +1,30 @@
+grid:
+  resolution: 0.15
+  min_x: -5.0
+  max_x: 5.0
+  min_y: -4.0
+  max_y: 4.0
+  neighbor_radius_cells: 2
+  reference_radius_cells: 3
+
+vehicle:
+  min_horizontal_range: 0.25
+  max_horizontal_range: 5.0
+  max_traversable_slope_deg: 22.0
+  max_step_height: 0.08
+
+surface:
+  min_points_per_cell: 1
+  min_plane_cells: 4
+  min_step_neighbors: 2
+  max_vertical_span: 0.12
+  max_plane_rmse: 0.05
+  obstacle_min_relative_height: 0.06
+  obstacle_max_relative_height: 1.50
+  unknown_absolute_min_z: 0.03
+  unknown_absolute_max_z: 1.50
+
+output:
+  marking_z: 0.20
+  publish_debug_clouds: true
+  metrics_csv: ""

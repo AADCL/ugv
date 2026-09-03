@@ -1,7 +1,7 @@
 TebLocalPlannerROS:
   # ============================================================
   # Scout Mini + FAST-LIO / ROS1 Noetic TEB 第一阶段基线
-  # 目标：先稳定替换 DWA；保留 0.35 m/s 线速度上限；不允许主动倒车。
+  # 保留 0.35 m/s 线速度上限；不允许主动倒车。
   # 第一阶段先关闭 homotopy，确认基础 TEB 正常后再打开双拓扑。
   # ============================================================
 
@@ -24,7 +24,7 @@ TebLocalPlannerROS:
   allow_init_with_backwards_motion: false
 
   # 当前 local costmap 为 6 m x 6 m rolling window。
-  # 第一版看前方 3 m，避免像 DWA 一样只有很短的 rollout。
+  # 当前 local costmap 为 6 m x 6 m，局部轨迹看前方 3 m。
   max_global_plan_lookahead_dist: 3.0
   global_plan_prune_distance: 1.0
 
@@ -81,8 +81,8 @@ TebLocalPlannerROS:
   # 初版给 15 cm，优先解决之前“蹭障碍”的问题。
   min_obstacle_dist: 0.15
 
-  # 在最小净空之外继续给障碍一个软代价区，让轨迹更早开始绕。
-  inflation_dist: 0.35
+  # 与全局/局部 costmap 一致，障碍软代价距离为 0.10 m。
+  inflation_dist: 0.10
 
   costmap_obstacles_behind_robot_dist: 1.0
   obstacle_poses_affected: 20
@@ -116,8 +116,7 @@ TebLocalPlannerROS:
   weight_kinematics_forward_drive: 1000.0
   weight_kinematics_turning_radius: 1.0
 
-  # TEB 与 DWA 的一个关键区别：它显式优化时间。
-  # 先用 2.0，不一开始过度追求速度。
+  # 时间最优权重先用 2.0，不一开始过度追求速度。
   weight_optimaltime: 2.0
   weight_shortest_path: 0.0
 
@@ -164,4 +163,3 @@ TebLocalPlannerROS:
   oscillation_omega_eps: 0.10
   oscillation_recovery_min_duration: 10.0
   oscillation_filter_duration: 10.0
-

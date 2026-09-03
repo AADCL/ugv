@@ -1,0 +1,20 @@
+resolution: 0.10
+padding_m: 0.50
+min_points_per_cell: 1
+ground_height_percentile: 0.20
+max_fill_radius_cells: 4
+min_fill_neighbors: 3
+fit_radius_m: 0.30
+smooth_height_delta_m: 0.12
+
+# 平地和坡道使用同一张连续高程图。坡度只产生软代价；本版本不做楼梯语义。
+preferred_slope_deg: 5.0
+max_slope_deg: 25.0
+max_slope_cost: 80
+min_lethal_neighbors: 4
+
+# Fuse classified nonground returns into the terrain cost using local ground
+# height, while rejecting ceilings and overhead returns.
+obstacle_ground_search_radius_m: 0.30
+obstacle_min_relative_height_m: 0.08
+obstacle_max_relative_height_m: 1.50

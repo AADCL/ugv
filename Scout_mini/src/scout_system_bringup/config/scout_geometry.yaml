@@ -5,9 +5,10 @@
 odom_to_camera_init:
   x: 0.25
   y: 0.00
+  # Rigid Livox-to-base_link height offset. This is not the measured 0.48 m
+  # sensor height above the ground in patchworkpp_scout.yaml.
   z: 0.20
 
   roll_deg: 0.0
   pitch_deg: 45.0
   yaw_deg: 0.0
-

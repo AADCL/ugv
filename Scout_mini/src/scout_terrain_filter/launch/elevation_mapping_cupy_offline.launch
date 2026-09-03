@@ -1,0 +1,17 @@
+<launch>
+  <!-- Offline/live-safe experiment: this file starts no lidar, chassis, or planner nodes. -->
+  <arg name="input_cloud" default="/cloud_registered_body"/>
+  <arg name="config" default="$(find scout_terrain_filter)/config/elevation_mapping_cupy_scout.yaml"/>
+
+  <node pkg="elevation_mapping_cupy"
+        type="elevation_mapping_node"
+        name="scout_elevation_mapping"
+        output="screen"
+        required="true">
+    <env name="PYTHONPATH" value="$(env HOME)/.local/lib/python3.8/site-packages:$(env PYTHONPATH)"/>
+    <rosparam command="load" file="$(arg config)"/>
+    <param name="subscribers/livox/topic_name" value="$(arg input_cloud)"/>
+    <param name="plugin_config_file" value="$(find elevation_mapping_cupy)/config/core/plugin_config.yaml"/>
+    <param name="weight_file" value="$(find elevation_mapping_cupy)/config/core/weights.dat"/>
+  </node>
+</launch>

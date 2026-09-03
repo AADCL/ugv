@@ -11,8 +11,6 @@ import sys
 import rosbag
 
 
-DWA_LOCAL = "/move_base/DWAPlannerROS/local_plan"
-DWA_TRAJ = "/move_base/DWAPlannerROS/trajectory_cloud"
 TEB_LOCAL = "/move_base/TebLocalPlannerROS/local_plan"
 TEB_POSES = "/move_base/TebLocalPlannerROS/teb_poses"
 
@@ -94,7 +92,7 @@ def percentile(values, p):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Summarize Scout navigation rosbag (DWA/TEB compatible)")
+    parser = argparse.ArgumentParser(description="Summarize Scout Mini TEB navigation rosbag")
     parser.add_argument("path", help="navigation run directory or .bag file")
     args = parser.parse_args()
 
@@ -108,7 +106,6 @@ def main():
     cmd = []
     odom = []
     local_plan = []
-    dwa_traj_cloud = []
     teb_poses = []
     status_rows = []
     goals = []
@@ -120,8 +117,6 @@ def main():
     topics = [
         "/cmd_vel",
         "/scout/odom",
-        DWA_LOCAL,
-        DWA_TRAJ,
         TEB_LOCAL,
         TEB_POSES,
         "/move_base/status",
@@ -132,7 +127,6 @@ def main():
     fail_patterns = (
         "failed to find a valid plan",
         "cost functions discarded all candidates",
-        "DWA planner failed to produce path",
         "failed to produce path",
         "no valid trajectories",
         "trajectory is not feasible",
@@ -156,10 +150,8 @@ def main():
                     cmd.append((ts, float(msg.linear.x), float(msg.angular.z)))
                 elif topic == "/scout/odom":
                     odom.append((ts, float(msg.twist.twist.linear.x), float(msg.twist.twist.angular.z)))
-                elif topic in (DWA_LOCAL, TEB_LOCAL):
+                elif topic == TEB_LOCAL:
                     local_plan.append((ts, topic, len(msg.poses), path_length(msg.poses)))
-                elif topic == DWA_TRAJ:
-                    dwa_traj_cloud.append((ts, int(msg.width) * int(msg.height)))
                 elif topic == TEB_POSES:
                     teb_poses.append((ts, len(getattr(msg, "poses", []))))
                 elif topic == "/move_base/status":
@@ -184,7 +176,6 @@ def main():
     cmd.sort()
     odom.sort()
     local_plan.sort()
-    dwa_traj_cloud.sort()
     teb_poses.sort()
     status_rows.sort()
     goals.sort()
@@ -193,13 +184,10 @@ def main():
     write_csv(os.path.join(out_dir, "cmd_vel.csv"), ["t", "linear_x", "angular_z"], cmd)
     write_csv(os.path.join(out_dir, "scout_odom_twist.csv"), ["t", "linear_x", "angular_z"], odom)
     write_csv(os.path.join(out_dir, "local_plan.csv"), ["t", "topic", "pose_count", "path_length_m"], local_plan)
-    write_csv(os.path.join(out_dir, "trajectory_cloud.csv"), ["t", "point_count"], dwa_traj_cloud)
     write_csv(os.path.join(out_dir, "teb_poses.csv"), ["t", "pose_count"], teb_poses)
     write_csv(os.path.join(out_dir, "move_base_status.csv"), ["t", "active", "pending", "status_count"], status_rows)
     write_csv(os.path.join(out_dir, "goals.csv"), ["t", "goal_id", "x", "y", "yaw_rad"], goals)
     write_csv(os.path.join(out_dir, "planner_fail_logs.csv"), ["t", "message"], planner_fail_logs)
-    # 兼容旧分析流程/文件名。
-    write_csv(os.path.join(out_dir, "dwa_fail_logs.csv"), ["t", "message"], planner_fail_logs)
 
     lin_mismatch = 0
     lin_test = 0
@@ -223,8 +211,6 @@ def main():
     local_lengths = [length for _, _, _, length in local_plan]
     local_pose_counts = [n for _, _, n, _ in local_plan]
 
-    zero_dwa_traj = sum(1 for _, n in dwa_traj_cloud if n == 0)
-    dwa_traj_counts = [n for _, n in dwa_traj_cloud]
     zero_teb_poses = sum(1 for _, n in teb_poses if n == 0)
     teb_pose_counts = [n for _, n in teb_poses]
 
@@ -268,19 +254,11 @@ def main():
     if nonzero_vx:
         share_ge_030 = sum(1 for x in nonzero_vx if x >= 0.30) / float(len(nonzero_vx))
 
-    has_dwa = topic_counts.get(DWA_LOCAL, 0) > 0 or topic_counts.get(DWA_TRAJ, 0) > 0
     has_teb = topic_counts.get(TEB_LOCAL, 0) > 0 or topic_counts.get(TEB_POSES, 0) > 0
-    if has_teb and not has_dwa:
-        planner = "TEB"
-    elif has_dwa and not has_teb:
-        planner = "DWA"
-    elif has_teb and has_dwa:
-        planner = "MIXED/UNKNOWN"
-    else:
-        planner = "UNKNOWN"
+    planner = "TEB" if has_teb else "UNKNOWN"
 
     lines = []
-    lines.append("Scout navigation log summary (DWA/TEB compatible)")
+    lines.append("Scout Mini navigation log summary (TEB)")
     lines.append("planner_detected: {}".format(planner))
     lines.append("bags: {}".format(len(bags)))
     lines.append("duration_sec: {:.3f}".format(duration))
@@ -317,12 +295,6 @@ def main():
         lines.append("local_plan_length_m_p90: {:.3f}".format(percentile(local_lengths, 0.90)))
         lines.append("local_plan_length_m_max: {:.3f}".format(max(local_lengths)))
 
-    lines.append("dwa_trajectory_cloud_messages: {}".format(len(dwa_traj_cloud)))
-    lines.append("dwa_zero_point_trajectory_cloud_messages: {}".format(zero_dwa_traj))
-    if dwa_traj_counts:
-        lines.append("dwa_trajectory_cloud_points_median: {:.1f}".format(statistics.median(dwa_traj_counts)))
-        lines.append("dwa_trajectory_cloud_points_max: {}".format(max(dwa_traj_counts)))
-
     lines.append("teb_poses_messages: {}".format(len(teb_poses)))
     lines.append("teb_zero_pose_messages: {}".format(zero_teb_poses))
     if teb_pose_counts:
@@ -340,7 +312,6 @@ def main():
     lines.append("")
     lines.append("Interpretation hints:")
     lines.append("- TEB: local_plan_length_m and teb_poses are the primary trajectory-shape indicators.")
-    lines.append("- DWA: trajectory_cloud zero counts remain useful for legacy comparisons.")
     lines.append("- long max_active_zero_cmd_sec + planner failure logs/local-plan gaps: local planner/costmap feasibility issue is likely.")
     lines.append("- nonzero cmd_vel but high *_cmd_without_odom_response: chassis execution/dead-zone issue is likely.")
     lines.append("- low open-space linear command with TEB: inspect weight_optimaltime and velocity/acceleration limits before raising max_vel_x.")
@@ -360,4 +331,3 @@ if __name__ == "__main__":
     except Exception as e:
         print("[ERROR] {}".format(e), file=sys.stderr)
         sys.exit(1)
-

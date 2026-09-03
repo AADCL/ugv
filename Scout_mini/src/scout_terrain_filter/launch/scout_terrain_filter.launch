@@ -1,0 +1,27 @@
+<launch>
+  <arg name="input_cloud" default="/cloud_registered_terrain"/>
+  <arg name="patchwork_config" default="$(find scout_terrain_filter)/config/patchworkpp_scout.yaml"/>
+  <arg name="guard_config" default="$(find scout_terrain_filter)/config/terrain_guard_scout.yaml"/>
+  <arg name="metrics_csv" default=""/>
+
+  <node pkg="patchworkpp" type="demo" name="scout_patchworkpp" output="screen" required="true">
+    <rosparam command="load" file="$(arg patchwork_config)"/>
+    <param name="cloud_topic" value="$(arg input_cloud)"/>
+    <remap from="~ground" to="/terrain/patchwork_ground"/>
+    <remap from="~nonground" to="/terrain/patchwork_nonground"/>
+    <remap from="~cloud" to="/terrain/patchwork_input"/>
+  </node>
+
+  <node pkg="scout_terrain_filter" type="terrain_guard_node" name="scout_terrain_guard" output="screen" required="true">
+    <rosparam command="load" file="$(arg guard_config)"/>
+    <param name="output/metrics_csv" value="$(arg metrics_csv)"/>
+    <remap from="ground" to="/terrain/patchwork_ground"/>
+    <remap from="nonground" to="/terrain/patchwork_nonground"/>
+    <remap from="safe_ground" to="/terrain/ground_points"/>
+    <remap from="unsafe_ground" to="/terrain/unsafe_ground_points"/>
+    <remap from="obstacles" to="/terrain/obstacle_points"/>
+    <remap from="clearing" to="/terrain/clearing_points"/>
+    <remap from="unknown" to="/terrain/unknown_points"/>
+    <remap from="diagnostics" to="/terrain/status"/>
+  </node>
+</launch>

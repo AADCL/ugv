@@ -1,16 +1,20 @@
 <launch>
 
+  <arg name="node_name" default="scout_cloud_adapter" />
+  <arg name="input_topic" default="/cloud_registered_body" />
+  <arg name="output_topic" default="/cloud_registered_base" />
+  <arg name="target_frame" default="base_link" />
+
   <node
       pkg="scout_cloud_adapter"
       type="cloud_frame_adapter_node"
-      name="scout_cloud_adapter"
+      name="$(arg node_name)"
       output="screen">
 
-    <param name="input_topic" value="/cloud_registered_body" />
-    <param name="output_topic" value="/cloud_registered_base" />
-    <param name="target_frame" value="base_link" />
+    <param name="input_topic" value="$(arg input_topic)" />
+    <param name="output_topic" value="$(arg output_topic)" />
+    <param name="target_frame" value="$(arg target_frame)" />
 
   </node>
 
 </launch>
-

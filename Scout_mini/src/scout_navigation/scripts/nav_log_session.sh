@@ -33,8 +33,7 @@ if ! rosnode list 2>/dev/null | grep -qx '/move_base'; then
   echo "[NAV_LOG][WARN] /move_base is not currently visible. The bag will still start, but navigation data may be incomplete."
 fi
 
-# 同时保留 DWA 与 TEB 相关 topic。
-# 当前使用哪一个 planner，就会有哪一组 topic 实际产生消息；另一组为空不影响 rosbag。
+# Standard global planning, slope cost, elevation-relative local obstacles and TEB.
 TOPICS=(
   /tf
   /tf_static
@@ -49,12 +48,6 @@ TOPICS=(
   /move_base/feedback
   /move_base/result
   /move_base/GlobalPlanner/plan
-
-  /move_base/DWAPlannerROS/global_plan
-  /move_base/DWAPlannerROS/local_plan
-  /move_base/DWAPlannerROS/trajectory_cloud
-  /move_base/DWAPlannerROS/cost_cloud
-  /move_base/DWAPlannerROS/parameter_updates
 
   /move_base/TebLocalPlannerROS/global_plan
   /move_base/TebLocalPlannerROS/local_plan
@@ -75,7 +68,13 @@ TOPICS=(
   /move_base/global_costmap/costmap
   /move_base/global_costmap/costmap_updates
   /nav_static_map
+  /terrain_2p5d/elevation_cloud
+  /terrain_2p5d/traversability_cost
+  /terrain_2p5d/slope
   /cloud_registered_body
+  /cloud_registered_terrain
+  /terrain/elevation_obstacle_points
+  /terrain/elevation_clearing_points
 )
 
 finish_session() {
@@ -122,11 +121,10 @@ finish_session() {
 trap finish_session INT TERM EXIT
 
 echo "[NAV_LOG] run_dir=${RUN_DIR}"
-echo "[NAV_LOG] DWA/TEB compatible navigation log enabled (including /cloud_registered_body)"
+echo "[NAV_LOG] 2.5D + TEB navigation log enabled (including /cloud_registered_body)"
 echo "[NAV_LOG] perform the test now; Ctrl+C this launch when finished"
 
 rosbag record --lz4 --split --size=2048 -O "${RUN_DIR}/navigation" "${TOPICS[@]}" &
 BAG_PID=$!
 wait "${BAG_PID}" 2>/dev/null || true
 finish_session
-

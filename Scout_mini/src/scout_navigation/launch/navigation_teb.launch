@@ -1,46 +1,62 @@
 <launch>
+  <arg name="map_name" default="scout_map_01" />
+  <arg name="map_dir" default="$(env HOME)/livox_fastlio/maps/$(arg map_name)" />
+  <arg name="nav_map_yaml" default="$(arg map_dir)/map_raw.yaml" />
+  <arg name="terrain_map_yaml" default="$(arg map_dir)/terrain_2p5d.yaml" />
+  <arg name="odom_topic" default="/scout/odom" />
+  <arg name="cmd_vel_topic" default="/cmd_vel" />
 
-    <arg name="map_name" default="scout_map_01" />
-    <arg name="odom_topic" default="/scout/odom" />
-    <arg name="cmd_vel_topic" default="/cmd_vel" />
-    <arg name="obstacle_cloud_topic" default="/cloud_registered_body" />
+  <!--
+    Navigation-only layer. Start scout_localization.launch first with the
+    same map_name. Livox, FAST-LIO, NDT and the CAN chassis are deliberately
+    not included here, so this launch cannot replace their running nodes.
+  -->
 
-    <arg name="map_dir" default="$(env HOME)/livox_fastlio/maps/$(arg map_name)" />
+  <!-- Live cloud is compared against the saved elevation surface. -->
+  <include file="$(find scout_cloud_adapter)/launch/cloud_adapter.launch">
+    <arg name="node_name" value="scout_terrain_cloud_adapter" />
+    <arg name="output_topic" value="/cloud_registered_terrain" />
+    <arg name="target_frame" value="terrain_sensor" />
+  </include>
+  <node pkg="scout_2p5d_navigation" type="terrain_relative_obstacle_node"
+        name="scout_terrain_relative_obstacle_filter" output="screen">
+    <rosparam command="load"
+              file="$(find scout_2p5d_navigation)/config/terrain_relative_obstacle.yaml" />
+    <param name="terrain_map_yaml" value="$(arg terrain_map_yaml)" />
+    <remap from="cloud" to="/cloud_registered_terrain" />
+    <remap from="obstacles" to="/terrain/elevation_obstacle_points" />
+    <remap from="clearing" to="/terrain/elevation_clearing_points" />
+  </node>
 
-    <arg name="nav_map_yaml" default="$(arg map_dir)/map_raw.yaml" />
+  <!-- PGM remains available for RViz and 2D compatibility. -->
+  <node pkg="map_server" type="map_server" name="scout_navigation_map_server"
+        args="$(arg nav_map_yaml)" output="screen">
+    <remap from="map" to="/nav_static_map" />
+    <remap from="map_metadata" to="/nav_static_map_metadata" />
+  </node>
 
-    <!-- 1. 导航专用 raw 静态地图 -->
-    <node pkg="map_server" type="map_server" name="scout_navigation_map_server" args="$(arg nav_map_yaml)" output="screen">
+  <!-- Elevation/slope topics remain available for RViz and diagnostics. -->
+  <node pkg="scout_2p5d_navigation" type="terrain_map_server_node"
+        name="scout_terrain_map_server" output="screen">
+    <param name="terrain_map_yaml" value="$(arg terrain_map_yaml)" />
+  </node>
 
-        <remap from="map" to="/nav_static_map" />
-        <remap from="map_metadata" to="/nav_static_map_metadata" />
+  <node pkg="move_base" type="move_base" name="move_base" output="screen">
+    <rosparam command="load" file="$(find scout_navigation)/config/move_base_slope_teb.yaml" />
+    <rosparam command="load" ns="global_costmap"
+              file="$(find scout_navigation)/config/costmap_common.yaml" />
+    <rosparam command="load" ns="global_costmap"
+              file="$(find scout_navigation)/config/global_costmap_slope.yaml" />
+    <rosparam command="load" ns="local_costmap"
+              file="$(find scout_navigation)/config/costmap_common.yaml" />
+    <rosparam command="load" ns="local_costmap"
+              file="$(find scout_navigation)/config/local_costmap_slope.yaml" />
+    <rosparam command="load" file="$(find scout_navigation)/config/global_planner_slope.yaml" />
+    <rosparam command="load" file="$(find scout_navigation)/config/teb_local_planner.yaml" />
 
-    </node>
-
-    <!-- 2. move_base + TEB -->
-    <node pkg="move_base" type="move_base" name="move_base" output="screen">
-
-        <rosparam command="load" file="$(find scout_navigation)/config/move_base_teb.yaml" />
-
-        <rosparam command="load" ns="global_costmap" file="$(find scout_navigation)/config/costmap_common.yaml" />
-
-        <rosparam command="load" ns="global_costmap" file="$(find scout_navigation)/config/global_costmap.yaml" />
-
-        <rosparam command="load" ns="local_costmap" file="$(find scout_navigation)/config/costmap_common.yaml" />
-
-        <rosparam command="load" ns="local_costmap" file="$(find scout_navigation)/config/local_costmap.yaml" />
-
-        <rosparam command="load" file="$(find scout_navigation)/config/global_planner.yaml" />
-
-        <rosparam command="load" file="$(find scout_navigation)/config/teb_local_planner.yaml" />
-
-        <!-- 可通过 launch 参数覆盖 PointCloud2 障碍源 -->
-        <param name="local_costmap/obstacle_layer/fastlio_cloud/topic" value="$(arg obstacle_cloud_topic)" />
-
-        <remap from="odom" to="$(arg odom_topic)" />
-        <remap from="cmd_vel" to="$(arg cmd_vel_topic)" />
-
-    </node>
-
+    <param name="global_costmap/terrain_slope_layer/terrain_map_yaml"
+           value="$(arg terrain_map_yaml)" />
+    <remap from="odom" to="$(arg odom_topic)" />
+    <remap from="cmd_vel" to="$(arg cmd_vel_topic)" />
+  </node>
 </launch>
-

@@ -1,0 +1,14 @@
+min_range: 0.25
+max_range: 5.0
+
+# Relative to the saved elevation surface, not base_link Z. The measured
+# 150 mm wheel diameter gives a 75 mm radius, so use an 80 mm threshold.
+min_obstacle_relative_height: 0.08
+max_obstacle_relative_height: 1.50
+min_clearing_relative_height: -0.25
+max_clearing_relative_height: 2.00
+
+# Tolerate sparse elevation cells and normal localization error.
+ground_search_radius_cells: 2
+min_confidence: 1
+marking_z: 0.20
