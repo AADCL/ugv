@@ -32,9 +32,11 @@ public:
         pnh_.param<double>("obstacle_min_z", obstacle_min_z_, 0.05);
         pnh_.param<double>("obstacle_max_z", obstacle_max_z_, 1.20);
         pnh_.param<double>("free_dilation_m", free_dilation_m_, 0.10);
-        pnh_.param<double>("obstacle_inflation_m", obstacle_inflation_m_, 0.30);
+        pnh_.param<double>("obstacle_inflation_m", obstacle_inflation_m_, 0.10);
         pnh_.param<double>("classified_obstacle/ground_search_radius_m",
                            classified_ground_search_radius_m_, 0.30);
+        pnh_.param<double>("classified_ground/height_percentile",
+                           classified_ground_height_percentile_, 0.20);
         pnh_.param<double>("classified_obstacle/min_relative_height_m",
                            classified_obstacle_min_relative_height_m_, 0.08);
         pnh_.param<double>("classified_obstacle/max_relative_height_m",
@@ -58,6 +60,8 @@ public:
             terrain_flat_slope_deg_ + 0.1, terrain_max_slope_deg_);
         classified_ground_search_radius_m_ = std::max(
             resolution_, classified_ground_search_radius_m_);
+        classified_ground_height_percentile_ = std::max(
+            0.0, std::min(0.50, classified_ground_height_percentile_));
         classified_obstacle_max_relative_height_m_ = std::max(
             classified_obstacle_min_relative_height_m_ + 0.01,
             classified_obstacle_max_relative_height_m_);
@@ -315,8 +319,9 @@ private:
         const std::size_t cell_count = static_cast<std::size_t>(width_) * height_;
         std::vector<uint8_t> floor_mask(cell_count, 0);
         std::vector<uint8_t> obstacle_mask(cell_count, 0);
-        std::vector<double> height_sum(cell_count, 0.0);
-        std::vector<uint32_t> height_count(cell_count, 0);
+        std::vector<std::vector<float>> ground_samples(cell_count);
+        std::vector<float> ground_height(
+            cell_count, std::numeric_limits<float>::quiet_NaN());
 
         const auto mark = [&](const pcl::PointCloud<pcl::PointXYZI>& cloud,
                               std::vector<uint8_t>* mask) {
@@ -340,8 +345,17 @@ private:
             if (gx < 0 || gy < 0 || gx >= width_ || gy >= height_)
                 continue;
             const int id = index(gx, gy);
-            height_sum[id] += p.z;
-            ++height_count[id];
+            ground_samples[id].push_back(p.z);
+        }
+        for (std::size_t id = 0; id < cell_count; ++id)
+        {
+            auto& values = ground_samples[id];
+            if (values.empty()) continue;
+            const std::size_t selected = static_cast<std::size_t>(std::round(
+                classified_ground_height_percentile_ *
+                static_cast<double>(values.size() - 1)));
+            std::nth_element(values.begin(), values.begin() + selected, values.end());
+            ground_height[id] = values[selected];
         }
 
         // Patchwork++ nonground also contains ceilings and other high returns.
@@ -373,10 +387,9 @@ private:
                     if (nx < 0 || ny < 0 || nx >= width_ || ny >= height_)
                         continue;
                     const int neighbor_id = index(nx, ny);
-                    if (height_count[neighbor_id] == 0)
+                    if (!std::isfinite(ground_height[neighbor_id]))
                         continue;
-                    local_ground.push_back(
-                        height_sum[neighbor_id] / height_count[neighbor_id]);
+                    local_ground.push_back(ground_height[neighbor_id]);
                 }
             }
             if (local_ground.empty())
@@ -417,9 +430,9 @@ private:
                 for (int x = 0; x < width_; ++x)
                 {
                     const int center_id = index(x, y);
-                    if (height_count[center_id] == 0)
+                    if (!std::isfinite(ground_height[center_id]))
                         continue;
-                    const double center_z = height_sum[center_id] / height_count[center_id];
+                    const double center_z = ground_height[center_id];
                     std::vector<Eigen::Vector3d> rows;
                     std::vector<double> values;
                     rows.reserve((2 * fit_radius + 1) * (2 * fit_radius + 1));
@@ -436,9 +449,9 @@ private:
                             if (nx < 0 || ny < 0 || nx >= width_ || ny >= height_)
                                 continue;
                             const int neighbor_id = index(nx, ny);
-                            if (height_count[neighbor_id] == 0)
+                            if (!std::isfinite(ground_height[neighbor_id]))
                                 continue;
-                            const double z = height_sum[neighbor_id] / height_count[neighbor_id];
+                            const double z = ground_height[neighbor_id];
                             if (std::abs(z - center_z) > terrain_max_height_delta_m_)
                                 continue;
                             rows.emplace_back(dx * resolution_, dy * resolution_, 1.0);
@@ -548,6 +561,7 @@ private:
     double free_dilation_m_;
     double obstacle_inflation_m_;
     double classified_ground_search_radius_m_;
+    double classified_ground_height_percentile_;
     double classified_obstacle_min_relative_height_m_;
     double classified_obstacle_max_relative_height_m_;
     int classified_obstacle_min_points_per_cell_;

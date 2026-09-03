@@ -7,21 +7,20 @@ rolling_window: false
 
 plugins:
   - {name: static_layer, type: "costmap_2d::StaticLayer"}
-  - {name: terrain_2p5d_layer, type: "wheeltec_2p5d_navigation/TerrainCostmapLayer"}
+  - {name: terrain_slope_layer, type: "wheeltec_2p5d_navigation/TerrainCostmapLayer"}
   - {name: inflation_layer, type: "costmap_2d::InflationLayer"}
 
 static_layer:
   map_topic: /nav_static_map
   subscribe_to_updates: false
-  trinary_costmap: false
+  trinary_costmap: true
   lethal_cost_threshold: 100
   track_unknown_space: true
 
-terrain_2p5d_layer:
+terrain_slope_layer:
   enabled: true
   unknown_as_lethal: false
 
 inflation_layer:
-  inflation_radius: 0.45
-  cost_scaling_factor: 4.0
-
+  inflation_radius: 0.10
+  cost_scaling_factor: 5.0

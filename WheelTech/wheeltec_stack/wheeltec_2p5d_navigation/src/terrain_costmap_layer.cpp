@@ -53,7 +53,9 @@ void TerrainCostmapLayer::updateCosts(costmap_2d::Costmap2D& master_grid,
         cost = costmap_2d::LETHAL_OBSTACLE;
       }
       const uint8_t previous = master_grid.getCost(x, y);
-      if (previous == costmap_2d::NO_INFORMATION || cost > previous)
+      // Occupancy and unknown-space ownership stays with the static PGM. The
+      // terrain layer may only add slope cost to cells already known there.
+      if (previous != costmap_2d::NO_INFORMATION && cost > previous)
         master_grid.setCost(x, y, cost);
     }
   }

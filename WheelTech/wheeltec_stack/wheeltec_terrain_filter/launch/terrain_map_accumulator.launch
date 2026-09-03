@@ -12,13 +12,13 @@
     <remap from="ground" to="$(arg ground_topic)" />
     <remap from="obstacles" to="$(arg obstacle_topic)" />
     <remap from="odom" to="$(arg odom_topic)" />
-    <param name="voxel_size" value="0.10" />
+    <param name="voxel_size" value="0.05" />
     <param name="output_ground_path"
            value="$(env HOME)/livox_fastlio/maps/$(arg map_name)/terrain_ground_camera_init.pcd" />
     <param name="output_obstacle_path"
            value="$(env HOME)/livox_fastlio/maps/$(arg map_name)/terrain_obstacles_camera_init.pcd" />
     <param name="save_on_shutdown" value="true" />
-    <param name="min_obstacle_frames" value="5" />
-    <param name="min_observation_span" value="1.0" />
+    <param name="min_obstacle_frames" value="3" />
+    <param name="min_observation_span" value="0.4" />
   </node>
 </launch>

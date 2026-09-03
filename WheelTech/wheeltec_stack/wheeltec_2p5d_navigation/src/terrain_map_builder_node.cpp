@@ -56,21 +56,25 @@ class TerrainMapBuilder {
     pnh_.param("fit_radius_m", fit_radius_m_, 0.30);
     pnh_.param("smooth_height_delta_m", smooth_height_delta_, 0.12);
     pnh_.param("preferred_slope_deg", preferred_slope_deg_, 4.0);
-    pnh_.param("max_slope_deg", max_slope_deg_, 22.0);
-    pnh_.param("max_step_height_m", max_step_height_, 0.08);
-    pnh_.param("max_roughness_m", max_roughness_, 0.050);
-    pnh_.param("obstacle_min_relative_height_m", obstacle_min_relative_height_, 0.08);
-    pnh_.param("obstacle_max_relative_height_m", obstacle_max_relative_height_, 1.50);
-    pnh_.param("min_obstacle_points_per_cell", min_obstacle_points_, 3);
+    pnh_.param("max_slope_deg", max_slope_deg_, 25.0);
+    pnh_.param("max_slope_cost", max_slope_cost_, 80);
     pnh_.param("min_lethal_neighbors", min_lethal_neighbors_, 4);
-    pnh_.param("slope_cost_weight", slope_weight_, 0.55);
-    pnh_.param("roughness_cost_weight", roughness_weight_, 0.20);
-    pnh_.param("step_cost_weight", step_weight_, 0.25);
-    pnh_.param("obstacle_inflation_m", obstacle_inflation_m_, 0.05);
+    pnh_.param("obstacle_ground_search_radius_m",
+               obstacle_ground_search_radius_m_, 0.30);
+    pnh_.param("obstacle_min_relative_height_m",
+               obstacle_min_relative_height_m_, 0.08);
+    pnh_.param("obstacle_max_relative_height_m",
+               obstacle_max_relative_height_m_, 1.50);
     if (ground_path_.empty() || obstacle_path_.empty() || output_yaml_.empty())
       throw std::runtime_error("ground_pcd, obstacle_pcd and output_yaml are required");
     if (map_.resolution <= 0.0 || max_slope_deg_ <= preferred_slope_deg_)
       throw std::runtime_error("invalid 2.5D map parameters");
+    max_slope_cost_ = std::max(1, std::min(200, max_slope_cost_));
+    obstacle_ground_search_radius_m_ = std::max(
+        map_.resolution, obstacle_ground_search_radius_m_);
+    obstacle_max_relative_height_m_ = std::max(
+        obstacle_min_relative_height_m_ + 0.01,
+        obstacle_max_relative_height_m_);
     build();
   }
 
@@ -115,18 +119,11 @@ class TerrainMapBuilder {
         (max_y - min_y + 2.0 * padding_m_) / map_.resolution)));
     const std::size_t count = map_.size();
     std::vector<std::vector<float>> samples(count);
-    std::vector<std::vector<float>> obstacle_samples(count);
     for (const auto& p : ground) {
       if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) continue;
       const int id = cell(p.x, p.y);
       if (id >= 0) samples[id].push_back(p.z);
     }
-    for (const auto& p : obstacles) {
-      if (!std::isfinite(p.x) || !std::isfinite(p.y)) continue;
-      const int id = cell(p.x, p.y);
-      if (id >= 0 && std::isfinite(p.z)) obstacle_samples[id].push_back(p.z);
-    }
-
     const float nan = std::numeric_limits<float>::quiet_NaN();
     map_.elevation.assign(count, nan);
     map_.slope_deg.assign(count, nan);
@@ -172,9 +169,8 @@ class TerrainMapBuilder {
       for (uint32_t x = 0; x < map_.width; ++x) evaluateCell(x, y, radius);
     }
 
-    // Reject isolated lethal classifications caused by sparse returns or pose
-    // noise. A stair/ridge forms a continuous band and survives this test;
-    // a single unsupported cell remains traversable at maximum soft cost.
+    // Reject isolated over-limit slope cells caused by sparse returns or pose
+    // noise. Persistent steep regions remain lethal.
     const std::vector<uint8_t> raw_cost = map_.cost;
     for (uint32_t y = 0; y < map_.height; ++y) {
       for (uint32_t x = 0; x < map_.width; ++x) {
@@ -188,44 +184,50 @@ class TerrainMapBuilder {
               ny >= static_cast<int>(map_.height)) continue;
           lethal_neighbors += raw_cost[map_.index(nx, ny)] == kLethal ? 1 : 0;
         }
-        if (lethal_neighbors < min_lethal_neighbors_) map_.cost[id] = 252;
+        if (lethal_neighbors < min_lethal_neighbors_)
+          map_.cost[id] = static_cast<uint8_t>(max_slope_cost_);
       }
     }
 
-    // A nonground return is an obstacle only when it rises above the local
-    // ground surface. This rejects ceiling/low outliers and legacy marker
-    // points that do not form a persistent vertical object.
-    std::vector<uint8_t> obstacles_mask(count, 0);
-    for (std::size_t id = 0; id < count; ++id) {
-      if (!std::isfinite(map_.elevation[id])) continue;
-      int hits = 0;
-      for (const float z : obstacle_samples[id]) {
-        const double relative = z - map_.elevation[id];
-        if (relative >= obstacle_min_relative_height_ &&
-            relative <= obstacle_max_relative_height_) ++hits;
-      }
-      if (hits >= min_obstacle_points_) obstacles_mask[id] = 1;
-    }
-
-    const int obstacle_radius = std::max(0, static_cast<int>(std::ceil(
-        obstacle_inflation_m_ / map_.resolution)));
-    for (uint32_t y = 0; y < map_.height; ++y) {
-      for (uint32_t x = 0; x < map_.width; ++x) {
-        bool lethal = false;
-        for (int dy = -obstacle_radius; dy <= obstacle_radius && !lethal; ++dy) {
-          for (int dx = -obstacle_radius; dx <= obstacle_radius; ++dx) {
-            if (dx * dx + dy * dy > obstacle_radius * obstacle_radius) continue;
-            const int nx = static_cast<int>(x) + dx;
-            const int ny = static_cast<int>(y) + dy;
-            if (nx >= 0 && ny >= 0 && nx < static_cast<int>(map_.width) &&
-                ny < static_cast<int>(map_.height) && obstacles_mask[map_.index(nx, ny)]) {
-              lethal = true;
-              break;
-            }
-          }
+    // Patchwork++ nonground is an independent obstacle observation. Fuse it
+    // after slope denoising so a valid obstacle cannot be downgraded as an
+    // isolated steep cell. Relative height rejects ceilings and high returns.
+    const int obstacle_search_radius = std::max(
+        1, static_cast<int>(std::ceil(
+               obstacle_ground_search_radius_m_ / map_.resolution)));
+    std::size_t accepted_obstacle_points = 0;
+    std::size_t obstacle_cells = 0;
+    std::vector<uint8_t> obstacle_mask(count, 0);
+    for (const auto& point : obstacles) {
+      if (!std::isfinite(point.x) || !std::isfinite(point.y) ||
+          !std::isfinite(point.z)) continue;
+      const int id = cell(point.x, point.y);
+      if (id < 0) continue;
+      const int mx = id % static_cast<int>(map_.width);
+      const int my = id / static_cast<int>(map_.width);
+      std::vector<float> nearby_ground;
+      for (int dy = -obstacle_search_radius; dy <= obstacle_search_radius; ++dy) {
+        for (int dx = -obstacle_search_radius; dx <= obstacle_search_radius; ++dx) {
+          if (dx * dx + dy * dy > obstacle_search_radius * obstacle_search_radius)
+            continue;
+          const int nx = mx + dx;
+          const int ny = my + dy;
+          if (nx < 0 || ny < 0 || nx >= static_cast<int>(map_.width) ||
+              ny >= static_cast<int>(map_.height)) continue;
+          const float z = map_.elevation[map_.index(nx, ny)];
+          if (std::isfinite(z)) nearby_ground.push_back(z);
         }
-        if (lethal) map_.cost[map_.index(x, y)] = kLethal;
       }
+      if (nearby_ground.empty()) continue;
+      const double relative_height = point.z - median(nearby_ground);
+      if (relative_height < obstacle_min_relative_height_m_ ||
+          relative_height > obstacle_max_relative_height_m_) continue;
+      ++accepted_obstacle_points;
+      if (!obstacle_mask[id]) {
+        obstacle_mask[id] = 1;
+        ++obstacle_cells;
+      }
+      map_.cost[id] = kLethal;
     }
 
     wt::saveTerrainMap(map_, output_yaml_);
@@ -235,6 +237,10 @@ class TerrainMapBuilder {
     ROS_INFO("Saved 2.5D map %ux%u @ %.3fm: known=%zu lethal=%zu -> %s",
              map_.width, map_.height, map_.resolution, known, lethal,
              output_yaml_.c_str());
+    ROS_INFO("2.5D obstacle fusion: accepted=%zu/%zu points, cells=%zu, "
+             "relative_height=%.2f..%.2fm",
+             accepted_obstacle_points, obstacles.size(), obstacle_cells,
+             obstacle_min_relative_height_m_, obstacle_max_relative_height_m_);
   }
 
   void evaluateCell(uint32_t x, uint32_t y, int radius) {
@@ -279,7 +285,12 @@ class TerrainMapBuilder {
         const int ny = static_cast<int>(y) + dy;
         if (nx < 0 || ny < 0 || nx >= static_cast<int>(map_.width) ||
             ny >= static_cast<int>(map_.height)) continue;
-        const float z = map_.elevation[map_.index(nx, ny)];
+        const std::size_t neighbor_id = map_.index(nx, ny);
+        // Confidence 1 denotes an interpolated hole. Never turn interpolation
+        // boundaries into physical step obstacles.
+        if (map_.confidence[id] < 32 || map_.confidence[neighbor_id] < 32)
+          continue;
+        const float z = map_.elevation[neighbor_id];
         if (!std::isfinite(z)) continue;
         const double predicted = plane.x() * dx * map_.resolution +
                                  plane.y() * dy * map_.resolution + plane.z();
@@ -289,17 +300,14 @@ class TerrainMapBuilder {
     map_.slope_deg[id] = slope;
     map_.roughness[id] = rmse;
     map_.step_height[id] = max_step;
-    if (slope > max_slope_deg_ || max_step > max_step_height_ || rmse > max_roughness_) {
+    if (slope > max_slope_deg_) {
       map_.cost[id] = kLethal;
       return;
     }
     const double slope_score = clamp01((slope - preferred_slope_deg_) /
                                        (max_slope_deg_ - preferred_slope_deg_));
-    const double rough_score = clamp01(rmse / max_roughness_);
-    const double step_score = clamp01(max_step / max_step_height_);
-    const double score = slope_weight_ * slope_score +
-                         roughness_weight_ * rough_score + step_weight_ * step_score;
-    map_.cost[id] = static_cast<uint8_t>(std::round(252.0 * clamp01(score)));
+    map_.cost[id] = static_cast<uint8_t>(std::round(
+        max_slope_cost_ * slope_score * slope_score));
   }
 
   ros::NodeHandle pnh_;
@@ -315,17 +323,12 @@ class TerrainMapBuilder {
   double fit_radius_m_ = 0.30;
   double smooth_height_delta_ = 0.12;
   double preferred_slope_deg_ = 4.0;
-  double max_slope_deg_ = 22.0;
-  double max_step_height_ = 0.08;
-  double max_roughness_ = 0.050;
-  double obstacle_min_relative_height_ = 0.08;
-  double obstacle_max_relative_height_ = 1.50;
-  int min_obstacle_points_ = 3;
+  double max_slope_deg_ = 25.0;
+  int max_slope_cost_ = 80;
   int min_lethal_neighbors_ = 4;
-  double slope_weight_ = 0.55;
-  double roughness_weight_ = 0.20;
-  double step_weight_ = 0.25;
-  double obstacle_inflation_m_ = 0.05;
+  double obstacle_ground_search_radius_m_ = 0.30;
+  double obstacle_min_relative_height_m_ = 0.08;
+  double obstacle_max_relative_height_m_ = 1.50;
 };
 
 int main(int argc, char** argv) {

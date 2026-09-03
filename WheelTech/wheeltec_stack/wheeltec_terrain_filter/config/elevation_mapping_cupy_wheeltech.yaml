@@ -1,0 +1,71 @@
+# WheelTech Mid-360 Bayesian elevation-map experiment.
+resolution: 0.10
+map_length: 12.0
+sensor_noise_factor: 0.03
+mahalanobis_thresh: 2.5
+outlier_variance: 0.02
+time_variance: 0.0001
+max_variance: 4.0
+initial_variance: 1000.0
+wall_num_thresh: 20
+
+min_valid_distance: 0.25
+max_ray_length: 8.0
+max_height_range: 1.0
+
+# Permit a rising 22-degree surface while rejecting overhead returns.
+ramped_height_range_a: 0.45
+ramped_height_range_b: 0.40
+ramped_height_range_c: 0.35
+
+update_variance_fps: 5.0
+update_pose_fps: 10.0
+time_interval: 0.1
+map_acquire_fps: 5.0
+publish_statistics_fps: 1.0
+
+map_frame: camera_init
+base_frame: base_link
+corrected_map_frame: camera_init_corrected
+
+enable_edge_sharpen: true
+enable_visibility_cleanup: true
+enable_drift_compensation: false
+enable_overlap_clearance: true
+enable_pointcloud_publishing: false
+enable_drift_corrected_TF_publishing: false
+enable_normal_color: false
+enable_traversability_filter: false
+
+cleanup_step: 0.1
+cleanup_cos_thresh: 0.1
+overlap_clear_range_xy: 6.0
+overlap_clear_range_z: 1.2
+use_only_above_for_upper_bound: false
+
+use_initializer_at_start: false
+initialize_method: linear
+initialize_frame_id: [base_link]
+initialize_tf_offset: [0.0]
+initialize_tf_grid_size: 0.5
+dilation_size_initialize: 2
+
+plugin_config_file: $(find elevation_mapping_cupy)/config/core/plugin_config.yaml
+weight_file: $(find elevation_mapping_cupy)/config/core/weights.dat
+
+pointcloud_channel_fusions:
+  default: average
+
+image_channel_fusions:
+  default: exponential
+
+subscribers:
+  livox:
+    topic_name: /cloud_registered_body
+    data_type: pointcloud
+
+publishers:
+  elevation_map_raw:
+    layers: [elevation, variance, time, upper_bound, is_upper_bound]
+    basic_layers: [elevation]
+    fps: 5.0

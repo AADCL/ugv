@@ -1,4 +1,4 @@
-base_global_planner: wheeltec_2p5d_navigation/TerrainGlobalPlanner
+base_global_planner: global_planner/GlobalPlanner
 base_local_planner: teb_local_planner/TebLocalPlannerROS
 
 planner_frequency: 1.0
@@ -10,4 +10,3 @@ clearing_rotation_allowed: false
 oscillation_timeout: 20.0
 oscillation_distance: 0.05
 shutdown_costmaps: false
-

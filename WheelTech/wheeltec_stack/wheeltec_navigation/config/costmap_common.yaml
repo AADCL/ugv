@@ -8,6 +8,8 @@ footprint:
   - [-0.250, -0.200]
   - [-0.250,  0.200]
 
-footprint_padding: 0.03
+# 600 mm doorway leaves 100 mm per side around the measured 400 mm chassis.
+# Keep a small modelling margin; obstacle clearance is handled separately by TEB.
+footprint_padding: 0.01
 
 transform_tolerance: 0.5

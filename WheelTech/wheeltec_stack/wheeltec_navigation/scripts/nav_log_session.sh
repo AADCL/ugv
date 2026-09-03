@@ -33,7 +33,7 @@ if ! rosnode list 2>/dev/null | grep -qx '/move_base'; then
   echo "[NAV_LOG][WARN] /move_base is not currently visible. The bag will still start, but navigation data may be incomplete."
 fi
 
-# V4.0 只记录 2.5D 全局规划与 TEB 局部规划链路。
+# Standard global planning, slope cost, elevation-relative local obstacles and TEB.
 TOPICS=(
   /tf
   /tf_static
@@ -47,7 +47,7 @@ TOPICS=(
   /move_base/cancel
   /move_base/feedback
   /move_base/result
-  /move_base/TerrainGlobalPlanner/plan
+  /move_base/GlobalPlanner/plan
 
   /move_base/TebLocalPlannerROS/global_plan
   /move_base/TebLocalPlannerROS/local_plan
@@ -72,6 +72,9 @@ TOPICS=(
   /terrain_2p5d/traversability_cost
   /terrain_2p5d/slope
   /cloud_registered_body
+  /cloud_registered_terrain
+  /terrain/elevation_obstacle_points
+  /terrain/elevation_clearing_points
 )
 
 finish_session() {

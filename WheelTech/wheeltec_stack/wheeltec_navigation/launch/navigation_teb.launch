@@ -6,18 +6,27 @@
   <arg name="odom_topic" default="/odom" />
   <arg name="cmd_vel_topic" default="/cmd_vel" />
 
-  <!-- One formal entry: original Livox/FAST-LIO + PCD/NDT localization. -->
-  <include file="$(find wheeltec_system_bringup)/launch/wheeltec_localization.launch">
-    <arg name="map_name" value="$(arg map_name)" />
-  </include>
+  <!--
+    Navigation-only layer. Start wheeltec_localization.launch first with the
+    same map_name. Livox, FAST-LIO, NDT and the serial chassis are deliberately
+    not included here, so this launch cannot replace their running nodes.
+  -->
 
-  <!-- Shared live cloud branch for terrain obstacle marking and clearing. -->
+  <!-- Live cloud is compared against the saved elevation surface. -->
   <include file="$(find wheeltec_cloud_adapter)/launch/cloud_adapter.launch">
     <arg name="node_name" value="wheeltec_terrain_cloud_adapter" />
     <arg name="output_topic" value="/cloud_registered_terrain" />
     <arg name="target_frame" value="terrain_sensor" />
   </include>
-  <include file="$(find wheeltec_terrain_filter)/launch/wheeltec_terrain_filter.launch" />
+  <node pkg="wheeltec_2p5d_navigation" type="terrain_relative_obstacle_node"
+        name="wheeltec_terrain_relative_obstacle_filter" output="screen">
+    <rosparam command="load"
+              file="$(find wheeltec_2p5d_navigation)/config/terrain_relative_obstacle.yaml" />
+    <param name="terrain_map_yaml" value="$(arg terrain_map_yaml)" />
+    <remap from="cloud" to="/cloud_registered_terrain" />
+    <remap from="obstacles" to="/terrain/elevation_obstacle_points" />
+    <remap from="clearing" to="/terrain/elevation_clearing_points" />
+  </node>
 
   <!-- PGM remains available for RViz and 2D compatibility. -->
   <node pkg="map_server" type="map_server" name="wheeltec_navigation_map_server"
@@ -26,31 +35,27 @@
     <remap from="map_metadata" to="/nav_static_map_metadata" />
   </node>
 
-  <!-- Persistent 2.5D data is the formal planning map. -->
+  <!-- Elevation/slope topics remain available for RViz and diagnostics. -->
   <node pkg="wheeltec_2p5d_navigation" type="terrain_map_server_node"
         name="wheeltec_terrain_map_server" output="screen">
     <param name="terrain_map_yaml" value="$(arg terrain_map_yaml)" />
   </node>
 
   <node pkg="move_base" type="move_base" name="move_base" output="screen">
-    <rosparam command="load" file="$(find wheeltec_2p5d_navigation)/config/move_base_2p5d_teb.yaml" />
+    <rosparam command="load" file="$(find wheeltec_navigation)/config/move_base_slope_teb.yaml" />
     <rosparam command="load" ns="global_costmap"
               file="$(find wheeltec_navigation)/config/costmap_common.yaml" />
     <rosparam command="load" ns="global_costmap"
-              file="$(find wheeltec_2p5d_navigation)/config/global_costmap_2p5d.yaml" />
+              file="$(find wheeltec_navigation)/config/global_costmap_slope.yaml" />
     <rosparam command="load" ns="local_costmap"
               file="$(find wheeltec_navigation)/config/costmap_common.yaml" />
     <rosparam command="load" ns="local_costmap"
-              file="$(find wheeltec_2p5d_navigation)/config/local_costmap_2p5d.yaml" />
+              file="$(find wheeltec_navigation)/config/local_costmap_slope.yaml" />
+    <rosparam command="load" file="$(find wheeltec_navigation)/config/global_planner_slope.yaml" />
     <rosparam command="load" file="$(find wheeltec_navigation)/config/teb_local_planner.yaml" />
-    <rosparam command="load" file="$(find wheeltec_2p5d_navigation)/config/terrain_global_planner.yaml" />
 
-    <param name="TerrainGlobalPlanner/terrain_map_yaml" value="$(arg terrain_map_yaml)" />
-    <param name="terrain_map_yaml" value="$(arg terrain_map_yaml)" />
-    <param name="global_costmap/terrain_2p5d_layer/terrain_map_yaml" value="$(arg terrain_map_yaml)" />
-    <param name="local_costmap/terrain_2p5d_layer/terrain_map_yaml" value="$(arg terrain_map_yaml)" />
-    <param name="TebLocalPlannerROS/global_plan_viapoint_sep" value="0.30" />
-    <param name="TebLocalPlannerROS/weight_viapoint" value="3.0" />
+    <param name="global_costmap/terrain_slope_layer/terrain_map_yaml"
+           value="$(arg terrain_map_yaml)" />
     <remap from="odom" to="$(arg odom_topic)" />
     <remap from="cmd_vel" to="$(arg cmd_vel_topic)" />
   </node>

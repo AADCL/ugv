@@ -10,7 +10,6 @@
   <depend>costmap_2d</depend>
   <depend>boost</depend>
   <depend>geometry_msgs</depend>
-  <depend>nav_core</depend>
   <depend>nav_msgs</depend>
   <depend>pcl_conversions</depend>
   <depend>pcl_ros</depend>
@@ -23,7 +22,6 @@
   <build_depend>libyaml-cpp-dev</build_depend>
 
   <export>
-    <nav_core plugin="${prefix}/wheeltec_2p5d_plugins.xml" />
     <costmap_2d plugin="${prefix}/wheeltec_2p5d_plugins.xml" />
   </export>
 </package>

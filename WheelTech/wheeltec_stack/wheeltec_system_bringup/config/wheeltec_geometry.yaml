@@ -5,6 +5,7 @@
 odom_to_camera_init:
   x: 0.10
   y: 0.00
+  # Livox is 0.30 m above ground; base_link is 0.15 m above ground.
   z: 0.15
 
   roll_deg: 0.0

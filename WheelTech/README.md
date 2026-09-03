@@ -8,7 +8,7 @@
 - 雷达：Livox Mid-360，雷达地址 `192.168.1.165`，NX 有线地址 `192.168.1.5/24`。
 - RGB-D 相机：Orbbec Gemini 336L，USB 3.2；驱动、话题和 TF 见 `wheeltec_stack/CAMERA_ORBBEC336L_README.md`。
 - 底盘：四轮差速，外形尺寸约 `0.50 m × 0.40 m`。
-- 坐标系：右手系、前左上；`base_link -> body` 平移为前 `0.10 m`、上 `0.15 m`，Pitch 为 `+20°`。
+- 坐标系：右手系、前左上；`base_link -> body` 平移为前 `0.10 m`、上 `0.15 m`，Pitch 为 `+20°`；`base_link` 离地 `0.15 m`，Livox 离地 `0.30 m`。
 - 导航软件限制：前进 `0.35 m/s`、后退 `0.15 m/s`、角速度 `0.80 rad/s`；低于底盘资料物理上限。
 
 ## 目录
@@ -23,14 +23,14 @@ WheelTech/
 │   ├── wheeltec_cloud_adapter/     # 点云坐标适配
 │   ├── wheeltec_pointcloud_mapper/ # 贝叶斯静态点云建图
 │   ├── wheeltec_map_tools/         # PCD/PGM/YAML 地图收尾工具
-│   ├── wheeltec_terrain_filter/    # Patchwork++ 后处理、局部地形安全链
-│   ├── wheeltec_2p5d_navigation/   # 2.5D 地图、全局规划与 costmap 插件
+│   ├── wheeltec_terrain_filter/    # 建图期 Patchwork++ 分类与地形诊断
+│   ├── wheeltec_2p5d_navigation/   # 保存高程/坡度、坡度层与实时相对障碍
 │   ├── wheeltec_navigation/        # TEB 参数与导航日志
 │   └── fast_lio_localization/      # FAST-LIO 地图定位
 └── docs/
-    ├── 轮趣四轮差速机器人_开发实施文档_V4.0.md
-    ├── 轮趣四轮差速机器人_使用文档_V4.0.md
-    └── 轮趣四轮差速机器人_详细信息表_V4.0.md
+    ├── 轮趣四轮差速机器人_开发实施文档_V4.1.md
+    ├── 轮趣四轮差速机器人_使用文档_V4.1.md
+    └── 轮趣四轮差速机器人_详细信息表_V4.1.md
 ```
 
 `inspect/`、压缩包、构建产物和 SSH 文件只用于本地开发，不应上传到 GitHub。
@@ -81,6 +81,8 @@ roslaunch wheeltec_system_bringup wheeltec_mapping.launch \
 
 映射器使用两级体素结构：`0.20 m` 三维贝叶斯状态栅格负责临时障碍判定与自由空间射线清除，`0.05 m` 精细栅格保存最终静态点云。为控制 NX 负载，每四个滤波点追踪一条射线，清除距离限制为 `20 m`。过滤点云每 30 秒自动保存，正常退出时再次保存。
 
+完整 PCD、PGM 与 2.5D 地形图共用映射器发布的 `/wheeltec/static_scan`，再进入坐标适配、Patchwork++ 和分类累积，正式建图不再从原始 `/cloud_registered_body` 单独分叉。导航局部避障仍读取实时点云，以保留对移动障碍的响应。
+
 完成采集后在建图终端按一次 `Ctrl+C`，映射器会在正常退出时再次保存 `filtered_camera_init.pcd`。随后单独生成交付地图：
 
 ```bash
@@ -92,11 +94,15 @@ rosrun wheeltec_map_tools finalize_map.py factory_a
 ## 定位与导航
 
 ```bash
+roslaunch wheeltec_system_bringup wheeltec_localization.launch \
+  map_name:=factory_a
+
+# 定位稳定后另开终端
 roslaunch wheeltec_navigation navigation_teb.launch \
   map_name:=factory_a
 ```
 
-一键入口保留原 PCD/NDT 定位，使用 2.5D 全局规划和 TEB 局部规划。导航使用轮趣实测 `0.50 m × 0.40 m` footprint 和保守运动限制，不能替换为 Scout 的 footprint、CAN 驱动或速度参数。
+定位和导航入口职责分离：定位入口只启动一次并持续提供传感器、NDT、TF、底盘与 `/odom`；导航入口只叠加地图、GlobalPlanner、TEB 和 move_base，不会抢占重定位或底盘节点。PGM 负责固定障碍和未知区域，保存的地面高程提供坡度软代价和实时障碍地面参考。
 
 ## 安全要求
 
@@ -106,4 +112,4 @@ roslaunch wheeltec_navigation navigation_teb.launch \
 - 点云过滤结果只用于地图交付，不反馈到 FAST-LIO 前端。
 - `self_filter` 在实测边界确认前保持关闭。
 
-完整的逐文件复制、修改、编译和验收流程见 `docs/轮趣四轮差速机器人_开发实施文档_V4.0.md`；日常命令见使用文档，全部参数见详细信息表。V4.0 正式导航使用持久化 2.5D 地图、TerrainGlobalPlanner 与 TEB，不再提供 DWA。
+完整的逐文件复制、修改、编译和验收流程见 `docs/轮趣四轮差速机器人_开发实施文档_V4.1.md`；日常命令见使用文档，全部参数见详细信息表。V4.1 正式链路为 PGM 占据、保存高程坡度代价、实时高程相对障碍、GlobalPlanner 与 TEB，不提供 DWA；当前目标是平地和连续坡道路段，楼梯语义不在本版本验收范围。

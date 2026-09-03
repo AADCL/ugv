@@ -8,9 +8,12 @@ obstacle_min_z: 0.05
 obstacle_max_z: 1.20
 
 free_dilation_m: 0.10
-obstacle_inflation_m: 0.30
+# Do not bake inflation into the saved map. The move_base InflationLayer applies
+# the only 0.10 m runtime inflation, avoiding double inflation at narrow doors.
+obstacle_inflation_m: 0.00
 
 classified_obstacle/ground_search_radius_m: 0.30
+classified_ground/height_percentile: 0.20
 classified_obstacle/min_relative_height_m: 0.08
 classified_obstacle/max_relative_height_m: 1.50
-classified_obstacle/min_points_per_cell: 3
+classified_obstacle/min_points_per_cell: 1

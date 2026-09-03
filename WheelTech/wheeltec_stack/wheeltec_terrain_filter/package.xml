@@ -17,6 +17,8 @@
   <depend>std_srvs</depend>
   <depend>tf2_ros</depend>
   <exec_depend>patchworkpp</exec_depend>
+  <exec_depend>elevation_mapping_cupy</exec_depend>
+  <exec_depend>grid_map_msgs</exec_depend>
 
   <export/>
 </package>

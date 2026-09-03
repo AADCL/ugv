@@ -13,6 +13,7 @@ obstacle_inflation_m: 0.00
 # Only nonground points supported by nearby ground and within this relative
 # height band become obstacles. This rejects ceilings in indoor maps.
 classified_obstacle/ground_search_radius_m: 0.30
+classified_ground/height_percentile: 0.20
 classified_obstacle/min_relative_height_m: 0.08
 classified_obstacle/max_relative_height_m: 1.50
-classified_obstacle/min_points_per_cell: 3
+classified_obstacle/min_points_per_cell: 1

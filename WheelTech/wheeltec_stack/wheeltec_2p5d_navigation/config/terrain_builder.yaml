@@ -7,19 +7,14 @@ min_fill_neighbors: 3
 fit_radius_m: 0.30
 smooth_height_delta_m: 0.12
 
-# 舒适坡度以上开始增加代价；达到物理上限后禁止通行。
-preferred_slope_deg: 4.0
-max_slope_deg: 22.0
-max_step_height_m: 0.08
-max_roughness_m: 0.050
-obstacle_min_relative_height_m: 0.08
-obstacle_max_relative_height_m: 1.50
-min_obstacle_points_per_cell: 3
+# 平地和坡道使用同一张连续高程图。坡度只产生软代价；本版本不做楼梯语义。
+preferred_slope_deg: 5.0
+max_slope_deg: 25.0
+max_slope_cost: 80
 min_lethal_neighbors: 4
 
-slope_cost_weight: 0.55
-roughness_cost_weight: 0.20
-step_cost_weight: 0.25
-
-# 只消除点云离散缝隙；车体尺寸由规划器足迹检查，避免重复膨胀。
-obstacle_inflation_m: 0.05
+# Fuse classified nonground returns into the terrain cost using local ground
+# height, while rejecting ceilings and overhead returns.
+obstacle_ground_search_radius_m: 0.30
+obstacle_min_relative_height_m: 0.08
+obstacle_max_relative_height_m: 1.50
