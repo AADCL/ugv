@@ -7,7 +7,7 @@
 | 项目 | 平台与传感器 | 主要功能 | 项目入口 |
 |---|---|---|---|
 | Scout Mini | AgileX Scout Mini、Jetson、Livox Mid-360、RealSense D435i | 底盘 CAN 控制、FAST-LIO 建图、NDT 重定位、ROS Navigation/TEB 导航及 RGB-D 接入 | [项目 README](Scout_mini/README.md) · [项目文档](Scout_mini/docs/) |
-| WheelTech | 轮趣四轮差速底盘、Jetson NX、Livox Mid-360、Orbbec Gemini 336L | 串口底盘控制、统一静态点建图、NDT 重定位、PGM+坡度代价、GlobalPlanner、TEB 与 RGB-D 接入 | [项目 README](WheelTech/README.md) · [V4.1 文档](WheelTech/docs/) |
+| WheelTech | 轮趣四轮差速底盘、Jetson NX、Livox Mid-360、Orbbec Gemini 336L | 串口底盘控制、统一静态点建图、NDT 重定位、PGM+坡度代价、GlobalPlanner、TEB 与 RGB-D 接入 | [项目 README](WheelTech/README.md) · [V4.3 文档](WheelTech/docs/) |
 
 两套工程采用相近的软件数据流：
 
