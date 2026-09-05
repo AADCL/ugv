@@ -16,4 +16,4 @@ classified_obstacle/ground_search_radius_m: 0.30
 classified_ground/height_percentile: 0.20
 classified_obstacle/min_relative_height_m: 0.08
 classified_obstacle/max_relative_height_m: 1.50
-classified_obstacle/min_points_per_cell: 1
+classified_obstacle/min_points_per_cell: 2

@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <limits>
 #include <string>
 #include <unordered_map>
 
@@ -49,10 +48,6 @@ struct Accumulator {
   Eigen::Vector3d sum = Eigen::Vector3d::Zero();
   double intensity_sum = 0.0;
   uint32_t count = 0;
-  uint32_t hit_frames = 0;
-  std::size_t last_frame = std::numeric_limits<std::size_t>::max();
-  ros::Time first_stamp;
-  ros::Time last_stamp;
 };
 }  // namespace
 
@@ -68,8 +63,6 @@ class TerrainMapAccumulator {
                             "/tmp/terrain_obstacles_camera_init.pcd");
     pnh_.param("voxel_size", voxel_size_, 0.10);
     pnh_.param("save_on_shutdown", save_on_shutdown_, true);
-    pnh_.param("min_obstacle_frames", min_obstacle_frames_, 5);
-    pnh_.param("min_observation_span", min_observation_span_, 1.0);
     int max_voxels = 2000000;
     pnh_.param("max_voxels", max_voxels, 2000000);
     max_voxels_ = static_cast<std::size_t>(std::max(1, max_voxels));
@@ -105,7 +98,7 @@ class TerrainMapAccumulator {
   }
 
   void insert(const Cloud& cloud, const Eigen::Isometry3d& transform,
-              const ros::Time& stamp, VoxelMap* voxels) {
+              VoxelMap* voxels) {
     for (const Point& point : cloud.points) {
       if (!std::isfinite(point.x) || !std::isfinite(point.y) ||
           !std::isfinite(point.z)) continue;
@@ -119,12 +112,6 @@ class TerrainMapAccumulator {
       found->second.sum += world;
       found->second.intensity_sum += point.intensity;
       ++found->second.count;
-      if (found->second.last_frame != frames_) {
-        found->second.last_frame = frames_;
-        ++found->second.hit_frames;
-        if (found->second.first_stamp.isZero()) found->second.first_stamp = stamp;
-        found->second.last_stamp = stamp;
-      }
     }
   }
 
@@ -173,8 +160,10 @@ class TerrainMapAccumulator {
     Cloud obstacles;
     pcl::fromROSMsg(*ground_message, ground);
     pcl::fromROSMsg(*obstacle_message, obstacles);
-    insert(ground, transform, ground_message->header.stamp, &ground_voxels_);
-    insert(obstacles, transform, obstacle_message->header.stamp, &obstacle_voxels_);
+    // Static eligibility belongs exclusively to wheeltec_pointcloud_mapper.
+    // This node only preserves Patchwork++ labels in a persistent voxel map.
+    insert(ground, transform, &ground_voxels_);
+    insert(obstacles, transform, &obstacle_voxels_);
     world_frame_ = odom->header.frame_id;
     dirty_ = true;
     ++frames_;
@@ -182,15 +171,11 @@ class TerrainMapAccumulator {
                       frames_, ground_voxels_.size(), obstacle_voxels_.size());
   }
 
-  Cloud toCloud(const VoxelMap& voxels, bool persistent_only) const {
+  Cloud toCloud(const VoxelMap& voxels) const {
     Cloud cloud;
     cloud.reserve(voxels.size());
     for (const auto& entry : voxels) {
       if (entry.second.count == 0) continue;
-      if (persistent_only &&
-          (static_cast<int>(entry.second.hit_frames) < min_obstacle_frames_ ||
-           (entry.second.last_stamp - entry.second.first_stamp).toSec() <
-               min_observation_span_)) continue;
       const Eigen::Vector3d p = entry.second.sum / entry.second.count;
       Point point;
       point.x = p.x(); point.y = p.y(); point.z = p.z();
@@ -222,8 +207,8 @@ class TerrainMapAccumulator {
     }
     if (!ensureParent(output_ground_path_, message) ||
         !ensureParent(output_obstacle_path_, message)) return false;
-    const Cloud ground = toCloud(ground_voxels_, false);
-    const Cloud obstacles = toCloud(obstacle_voxels_, true);
+    const Cloud ground = toCloud(ground_voxels_);
+    const Cloud obstacles = toCloud(obstacle_voxels_);
     if (pcl::io::savePCDFileBinary(output_ground_path_, ground) != 0 ||
         pcl::io::savePCDFileBinary(output_obstacle_path_, obstacles) != 0) {
       *message = "Failed to save classified terrain PCD files";
@@ -270,8 +255,6 @@ class TerrainMapAccumulator {
   std::size_t max_voxels_ = 2000000;
   std::size_t frames_ = 0;
   bool save_on_shutdown_ = true;
-  int min_obstacle_frames_ = 5;
-  double min_observation_span_ = 1.0;
   bool dirty_ = false;
 };
 

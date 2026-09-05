@@ -22,5 +22,6 @@ terrain_slope_layer:
   unknown_as_lethal: false
 
 inflation_layer:
-  inflation_radius: 0.10
-  cost_scaling_factor: 5.0
+  # The radius must exceed the 0.20 m inscribed radius of the chassis.
+  inflation_radius: 0.25
+  cost_scaling_factor: 3.0

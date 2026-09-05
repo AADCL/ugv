@@ -3,25 +3,41 @@
   <arg name="patchwork_config" default="$(find wheeltec_terrain_filter)/config/patchworkpp_wheeltech.yaml"/>
   <arg name="guard_config" default="$(find wheeltec_terrain_filter)/config/terrain_guard_wheeltech.yaml"/>
   <arg name="metrics_csv" default=""/>
+  <arg name="enable_guard" default="true"/>
+  <arg name="patchwork_node_name" default="wheeltec_patchworkpp"/>
+  <arg name="guard_node_name" default="wheeltec_terrain_guard"/>
+  <arg name="patchwork_ground_topic" default="/terrain/patchwork_ground"/>
+  <arg name="patchwork_nonground_topic" default="/terrain/patchwork_nonground"/>
+  <arg name="patchwork_input_topic" default="/terrain/patchwork_input"/>
+  <arg name="safe_ground_topic" default="/terrain/ground_points"/>
+  <arg name="unsafe_ground_topic" default="/terrain/unsafe_ground_points"/>
+  <arg name="obstacle_topic" default="/terrain/obstacle_points"/>
+  <arg name="clearing_topic" default="/terrain/clearing_points"/>
+  <arg name="unknown_topic" default="/terrain/unknown_points"/>
+  <arg name="diagnostics_topic" default="/terrain/status"/>
 
-  <node pkg="patchworkpp" type="demo" name="wheeltec_patchworkpp" output="screen" required="true">
+  <node pkg="patchworkpp" type="demo" name="$(arg patchwork_node_name)" output="screen" required="true">
     <rosparam command="load" file="$(arg patchwork_config)"/>
     <param name="cloud_topic" value="$(arg input_cloud)"/>
-    <remap from="~ground" to="/terrain/patchwork_ground"/>
-    <remap from="~nonground" to="/terrain/patchwork_nonground"/>
-    <remap from="~cloud" to="/terrain/patchwork_input"/>
+    <remap from="~ground" to="$(arg patchwork_ground_topic)"/>
+    <remap from="~nonground" to="$(arg patchwork_nonground_topic)"/>
+    <remap from="~cloud" to="$(arg patchwork_input_topic)"/>
   </node>
 
-  <node pkg="wheeltec_terrain_filter" type="terrain_guard_node" name="wheeltec_terrain_guard" output="screen" required="true">
+  <!-- Optional diagnostic branch. The deliverable mapping chain consumes
+       Patchwork++ labels directly and disables this node. -->
+  <node if="$(arg enable_guard)" pkg="wheeltec_terrain_filter"
+        type="terrain_guard_node" name="$(arg guard_node_name)"
+        output="screen" required="true">
     <rosparam command="load" file="$(arg guard_config)"/>
     <param name="output/metrics_csv" value="$(arg metrics_csv)"/>
-    <remap from="ground" to="/terrain/patchwork_ground"/>
-    <remap from="nonground" to="/terrain/patchwork_nonground"/>
-    <remap from="safe_ground" to="/terrain/ground_points"/>
-    <remap from="unsafe_ground" to="/terrain/unsafe_ground_points"/>
-    <remap from="obstacles" to="/terrain/obstacle_points"/>
-    <remap from="clearing" to="/terrain/clearing_points"/>
-    <remap from="unknown" to="/terrain/unknown_points"/>
-    <remap from="diagnostics" to="/terrain/status"/>
+    <remap from="ground" to="$(arg patchwork_ground_topic)"/>
+    <remap from="nonground" to="$(arg patchwork_nonground_topic)"/>
+    <remap from="safe_ground" to="$(arg safe_ground_topic)"/>
+    <remap from="unsafe_ground" to="$(arg unsafe_ground_topic)"/>
+    <remap from="obstacles" to="$(arg obstacle_topic)"/>
+    <remap from="clearing" to="$(arg clearing_topic)"/>
+    <remap from="unknown" to="$(arg unknown_topic)"/>
+    <remap from="diagnostics" to="$(arg diagnostics_topic)"/>
   </node>
 </launch>

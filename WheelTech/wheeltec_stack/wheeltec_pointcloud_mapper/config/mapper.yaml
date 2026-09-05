@@ -28,25 +28,27 @@ self_filter:
 
 dynamic_filter:
   enable: true
-  # 轻量级三维贝叶斯占据栅格：端点命中提高占据概率，穿过体素的
-  # 抽样射线降低占据概率，从而清除已经离开的临时障碍。
-  # 该状态栅格分辨率独立于最终输出地图分辨率。
+  # This is the only dynamic/static authority. Candidate voxels are never
+  # exported until they have enough persistent, positive observations.
   voxel_size: 0.20
-  hit_probability: 0.70
-  miss_probability: 0.40
-  occupied_probability: 0.72
+  hit_probability: 0.65
+  miss_probability: 0.30
+  occupied_probability: 0.75
   clearing_probability: 0.35
-  min_hit_scans: 8
-  min_observation_span: 2.0
-  # Jetson NX 每四个滤波点追踪一条射线，并限制清除距离，控制 CPU 开销。
-  ray_stride: 4
+  min_hit_scans: 25
+  min_observation_span: 4.0
+  min_hit_ratio: 0.70
+  # Exact 3D voxel traversal is used for each selected ray. Start at stride 2
+  # on Jetson NX; bag replay must verify callback time before reducing to 1.
+  ray_stride: 2
   max_clearing_range: 20.0
-  ray_endpoint_margin: 0.30
-  candidate_timeout: 5.0
+  ray_endpoint_margin: 0.20
+  candidate_timeout: 3.0
   cleanup_period: 1.0
   max_voxels: 2000000
 
-# 已确认静态点进入独立的精细栅格，避免动态状态栅格在地面和墙面留下规则孔洞。
+# Fine samples remain tied to a Bayesian generation. Demotion invalidates the
+# complete generation so stale geometry cannot reappear after later hits.
 map:
   voxel_size: 0.05
   max_voxels: 5000000
@@ -54,7 +56,9 @@ map:
   save_on_shutdown: true
 
 map_publish_period: 2.0
-publish_dynamic_points: false
+# Keep enabled during validation. It can be disabled after the dynamic-object
+# acceptance test passes on the target Jetson.
+publish_dynamic_points: true
 max_odom_age: 0.20
 
 # May be overridden by pointcloud_mapper.launch.

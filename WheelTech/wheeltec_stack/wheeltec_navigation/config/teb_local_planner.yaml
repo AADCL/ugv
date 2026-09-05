@@ -1,7 +1,7 @@
 TebLocalPlannerROS:
   # ============================================================
   # WheelTech four-wheel differential + FAST-LIO / ROS1 Noetic TEB 基线
-  # 保留 0.35 m/s 线速度上限；不允许主动倒车。
+  # 验证阶段限制为 0.20 m/s；不允许主动倒车。
   # 第一阶段先关闭 homotopy，确认基础 TEB 正常后再打开双拓扑。
   # ============================================================
 
@@ -42,10 +42,10 @@ TebLocalPlannerROS:
   # -------------------------
   # Robot / Differential Drive
   # -------------------------
-  max_vel_x: 0.35
+  max_vel_x: 0.20
   max_vel_x_backwards: 0.15
   max_vel_y: 0.0
-  max_vel_theta: 0.80
+  max_vel_theta: 0.40
 
   acc_lim_x: 0.20
   acc_lim_theta: 0.30
@@ -78,11 +78,11 @@ TebLocalPlannerROS:
   include_costmap_obstacles: true
 
   # polygon footprint 已经包含 0.50 m x 0.40 m 真实车体尺寸。
-  # 600 mm 门洞每侧只有约 100 mm 物理余量，保留 40 mm 规划净空。
-  min_obstacle_dist: 0.04
+  # 600 mm 门洞每侧约 100 mm 物理余量，保留 80 mm 规划净空。
+  min_obstacle_dist: 0.08
 
-  # 软代价区收紧到 100 mm，避免门框把门洞中央轨迹排斥掉。
-  inflation_dist: 0.10
+  # Match the soft TEB penalty to the costmap's conservative inflation field.
+  inflation_dist: 0.20
 
   costmap_obstacles_behind_robot_dist: 1.0
   obstacle_poses_affected: 20
@@ -121,8 +121,8 @@ TebLocalPlannerROS:
   weight_shortest_path: 0.0
 
   # 保持真实 footprint 硬碰撞约束，同时允许在窄门中居中通过。
-  weight_obstacle: 60.0
-  weight_inflation: 0.30
+  weight_obstacle: 100.0
+  weight_inflation: 1.0
   weight_dynamic_obstacle: 10.0
 
   # 第一阶段关闭 via point 约束，避免把 TEB 又强行拉回原 global plan。

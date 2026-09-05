@@ -1,6 +1,6 @@
 global_frame: odom
 robot_base_frame: base_link
-update_frequency: 8.0
+update_frequency: 10.0
 publish_frequency: 4.0
 transform_tolerance: 0.5
 rolling_window: true
@@ -27,7 +27,7 @@ obstacle_layer:
     max_obstacle_height: 1.50
     obstacle_range: 4.0
     raytrace_range: 5.0
-    observation_persistence: 0.0
+    observation_persistence: 0.20
     expected_update_rate: 0.20
 
   elevation_clearing:
@@ -40,9 +40,9 @@ obstacle_layer:
     max_obstacle_height: 2.00
     obstacle_range: 4.0
     raytrace_range: 5.0
-    observation_persistence: 0.0
+    observation_persistence: 0.20
     expected_update_rate: 0.20
 
 inflation_layer:
-  inflation_radius: 0.10
-  cost_scaling_factor: 5.0
+  inflation_radius: 0.25
+  cost_scaling_factor: 3.0

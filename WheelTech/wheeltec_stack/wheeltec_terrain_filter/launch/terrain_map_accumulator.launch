@@ -1,6 +1,7 @@
 <launch>
   <arg name="map_name" default="current_mapping" />
-  <!-- Persist raw Patchwork++ classes. Safety filtering remains a separate live chain. -->
+  <!-- Persist labels from the Bayesian static scan. Dynamic/static ownership
+       remains exclusively in wheeltec_pointcloud_mapper. -->
   <arg name="ground_topic" default="/terrain/patchwork_ground" />
   <arg name="obstacle_topic" default="/terrain/patchwork_nonground" />
   <arg name="odom_topic" default="/Odometry" />
@@ -18,7 +19,5 @@
     <param name="output_obstacle_path"
            value="$(env HOME)/livox_fastlio/maps/$(arg map_name)/terrain_obstacles_camera_init.pcd" />
     <param name="save_on_shutdown" value="true" />
-    <param name="min_obstacle_frames" value="3" />
-    <param name="min_observation_span" value="0.4" />
   </node>
 </launch>

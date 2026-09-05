@@ -39,7 +39,11 @@
     <arg name="target_frame" value="terrain_sensor" />
   </include>
 
-  <include file="$(find wheeltec_terrain_filter)/launch/wheeltec_terrain_filter.launch" />
+  <include file="$(find wheeltec_terrain_filter)/launch/wheeltec_terrain_filter.launch">
+    <!-- The accumulator consumes Patchwork++ directly. The terrain guard is a
+         diagnostic branch and is disabled in deliverable maps. -->
+    <arg name="enable_guard" value="false" />
+  </include>
 
   <include file="$(find wheeltec_terrain_filter)/launch/terrain_map_accumulator.launch">
     <arg name="map_name" value="$(arg map_name)" />

@@ -8,7 +8,7 @@ obstacle_inflation_m: 0.00
 classified_obstacle/ground_search_radius_m: 0.30
 classified_obstacle/min_relative_height_m: 0.08
 classified_obstacle/max_relative_height_m: 1.50
-classified_obstacle/min_points_per_cell: 1
+classified_obstacle/min_points_per_cell: 2
 
 # RAW map values are passed through as occupancy costs: 0 flat, 1..98 soft, 100 lethal, 255 unknown.
 terrain_cost/enable: true
@@ -20,5 +20,5 @@ terrain_cost/max_slope_deg: 22.0
 terrain_cost/min_cost: 15
 terrain_cost/max_cost: 80
 
-# Wheel width 0.40 m, footprint padding 0.01 m; 0.25 m covers half-width plus margin.
+# Wheel width 0.40 m, footprint padding 0.02 m; 0.25 m covers half-width plus margin.
 terrain_cost/dilation_m: 0.25

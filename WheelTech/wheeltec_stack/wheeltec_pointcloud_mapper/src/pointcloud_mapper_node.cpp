@@ -148,6 +148,7 @@ class PointcloudMapper {
     pnh_.param("dynamic_filter/min_hit_scans", min_hit_scans_, 8);
     pnh_.param("dynamic_filter/min_observation_span",
                min_observation_span_, 2.0);
+    pnh_.param("dynamic_filter/min_hit_ratio", min_hit_ratio_, 0.70);
     pnh_.param("dynamic_filter/ray_stride", ray_stride_, 4);
     pnh_.param("dynamic_filter/max_clearing_range",
                max_clearing_range_, 20.0);
@@ -184,6 +185,7 @@ class PointcloudMapper {
     clearing_log_odds_ = probabilityToLogOdds(clearing_probability_);
     min_hit_scans_ = std::max(1, min_hit_scans_);
     min_observation_span_ = std::max(0.0, min_observation_span_);
+    min_hit_ratio_ = std::max(0.0, std::min(1.0, min_hit_ratio_));
     ray_stride_ = std::max(1, ray_stride_);
     max_clearing_range_ = std::max(temporal_voxel_size_,
                                    max_clearing_range_);
@@ -243,12 +245,19 @@ class PointcloudMapper {
         state.last_hit.isZero()) {
       return false;
     }
-    return (state.last_hit - state.first_hit).toSec() >=
-           min_observation_span_;
+    const double observations =
+        static_cast<double>(state.hit_scans) + state.miss_scans;
+    const double hit_ratio = observations > 0.0
+                                 ? state.hit_scans / observations
+                                 : 0.0;
+    return hit_ratio >= min_hit_ratio_ &&
+           (state.last_hit - state.first_hit).toSec() >=
+               min_observation_span_;
   }
 
   void updateHit(const VoxelKey& key, const ros::Time& stamp) {
     OccupancyVoxelState& state = getOrCreateOccupancy(key);
+    const bool was_static = isStatic(state);
     state.last_seen = stamp;
     if (state.last_hit_scan == scan_sequence_) {
       return;
@@ -260,6 +269,10 @@ class PointcloudMapper {
       state.first_hit = stamp;
     }
     state.last_hit = stamp;
+    if (!was_static && isStatic(state)) {
+      ++bayesian_promoted_voxels_;
+      dirty_ = true;
+    }
   }
 
   void updateMiss(const VoxelKey& key, const ros::Time& stamp) {
@@ -268,6 +281,7 @@ class PointcloudMapper {
       return;
     }
     OccupancyVoxelState& state = it->second;
+    const bool was_static = isStatic(state);
     if (state.last_miss_scan == scan_sequence_) {
       return;
     }
@@ -277,9 +291,90 @@ class PointcloudMapper {
                               state.log_odds + miss_log_odds_);
     ++state.miss_scans;
     if (state.log_odds <= clearing_log_odds_) {
+      if (was_static) {
+        ++bayesian_demoted_voxels_;
+      }
       temporal_voxels_.erase(it);
       ++bayesian_cleared_voxels_;
       dirty_ = true;
+    } else if (was_static && !isStatic(state)) {
+      // Once negative evidence demotes a confirmed voxel, invalidate every
+      // fine-map sample from that generation. A later reappearance must earn
+      // static status again instead of reviving stale geometry.
+      state.generation = next_occupancy_generation_++;
+      state.hit_scans = 0;
+      state.miss_scans = 0;
+      state.first_hit = ros::Time();
+      state.last_hit = ros::Time();
+      ++bayesian_demoted_voxels_;
+      dirty_ = true;
+    }
+  }
+
+  void traceFreeVoxels(
+      const Eigen::Vector3d& sensor_position,
+      const Eigen::Vector3d& direction, double clear_until,
+      const std::unordered_set<VoxelKey, VoxelKeyHash>& occupied_this_scan,
+      const ros::Time& stamp) {
+    VoxelKey current = voxelKey(sensor_position, temporal_voxel_size_);
+
+    int step_x = 0;
+    int step_y = 0;
+    int step_z = 0;
+    double t_max_x = std::numeric_limits<double>::infinity();
+    double t_max_y = std::numeric_limits<double>::infinity();
+    double t_max_z = std::numeric_limits<double>::infinity();
+    double t_delta_x = std::numeric_limits<double>::infinity();
+    double t_delta_y = std::numeric_limits<double>::infinity();
+    double t_delta_z = std::numeric_limits<double>::infinity();
+
+    const auto initialize_axis = [&](double origin, double ray_direction,
+                                     int64_t cell, int* step, double* t_max,
+                                     double* t_delta) {
+      if (ray_direction > 1e-12) {
+        *step = 1;
+        const double boundary = (static_cast<double>(cell) + 1.0) *
+                                temporal_voxel_size_;
+        *t_max = std::max(0.0, (boundary - origin) / ray_direction);
+        *t_delta = temporal_voxel_size_ / ray_direction;
+      } else if (ray_direction < -1e-12) {
+        *step = -1;
+        const double boundary = static_cast<double>(cell) *
+                                temporal_voxel_size_;
+        *t_max = std::max(0.0, (boundary - origin) / ray_direction);
+        *t_delta = -temporal_voxel_size_ / ray_direction;
+      }
+    };
+
+    initialize_axis(sensor_position.x(), direction.x(), current.x, &step_x,
+                    &t_max_x, &t_delta_x);
+    initialize_axis(sensor_position.y(), direction.y(), current.y, &step_y,
+                    &t_max_y, &t_delta_y);
+    initialize_axis(sensor_position.z(), direction.z(), current.z, &step_z,
+                    &t_max_z, &t_delta_z);
+
+    constexpr double kTieEpsilon = 1e-9;
+    while (true) {
+      const double next = std::min(t_max_x, std::min(t_max_y, t_max_z));
+      if (!std::isfinite(next) || next >= clear_until) {
+        break;
+      }
+      if (t_max_x <= next + kTieEpsilon) {
+        current.x += step_x;
+        t_max_x += t_delta_x;
+      }
+      if (t_max_y <= next + kTieEpsilon) {
+        current.y += step_y;
+        t_max_y += t_delta_y;
+      }
+      if (t_max_z <= next + kTieEpsilon) {
+        current.z += step_z;
+        t_max_z += t_delta_z;
+      }
+      ++ray_voxel_visits_;
+      if (occupied_this_scan.find(current) == occupied_this_scan.end()) {
+        updateMiss(current, stamp);
+      }
     }
   }
 
@@ -305,23 +400,8 @@ class PointcloudMapper {
       if (clear_until <= temporal_voxel_size_) {
         continue;
       }
-      const Eigen::Vector3d direction = delta / full_range;
-      const int steps = static_cast<int>(
-          std::floor(clear_until / temporal_voxel_size_));
-      VoxelKey previous_key{std::numeric_limits<int64_t>::min(), 0, 0};
-      for (int step = 1; step <= steps; ++step) {
-        const Eigen::Vector3d sample = sensor_position +
-            direction * (step * temporal_voxel_size_);
-        const VoxelKey key = voxelKey(sample, temporal_voxel_size_);
-        if (key == previous_key) {
-          continue;
-        }
-        previous_key = key;
-        if (occupied_this_scan.find(key) != occupied_this_scan.end()) {
-          continue;
-        }
-        updateMiss(key, stamp);
-      }
+      traceFreeVoxels(sensor_position, delta / full_range, clear_until,
+                      occupied_this_scan, stamp);
     }
   }
 
@@ -478,10 +558,14 @@ class PointcloudMapper {
     ROS_INFO_THROTTLE(
         5.0,
         "Mapper: input=%zu filtered=%zu static_scan=%zu map=%zu occupancy=%zu "
-        "bayes_cleared=%llu",
+        "bayes_promoted=%llu bayes_demoted=%llu bayes_cleared=%llu "
+        "ray_voxels=%llu",
         input->size(), filtered->size(), static_scan.size(),
         map_voxels_.size(), temporal_voxels_.size(),
-        static_cast<unsigned long long>(bayesian_cleared_voxels_));
+        static_cast<unsigned long long>(bayesian_promoted_voxels_),
+        static_cast<unsigned long long>(bayesian_demoted_voxels_),
+        static_cast<unsigned long long>(bayesian_cleared_voxels_),
+        static_cast<unsigned long long>(ray_voxel_visits_));
   }
 
   void publishCloud(const Cloud& cloud, const ros::Publisher& publisher,
@@ -625,7 +709,10 @@ class PointcloudMapper {
     map_voxels_.clear();
     frame_id_.clear();
     scan_sequence_ = 0;
+    bayesian_promoted_voxels_ = 0;
+    bayesian_demoted_voxels_ = 0;
     bayesian_cleared_voxels_ = 0;
+    ray_voxel_visits_ = 0;
     dirty_ = false;
     ROS_WARN("wheeltec_pointcloud_mapper map was reset");
     return true;
@@ -677,6 +764,7 @@ class PointcloudMapper {
   const double max_log_odds_ = 4.0;
   int min_hit_scans_ = 8;
   double min_observation_span_ = 2.0;
+  double min_hit_ratio_ = 0.70;
   int ray_stride_ = 4;
   double max_clearing_range_ = 20.0;
   double ray_endpoint_margin_ = 0.30;
@@ -695,7 +783,10 @@ class PointcloudMapper {
   bool have_odom_ = false;
   uint64_t scan_sequence_ = 0;
   uint64_t next_occupancy_generation_ = 1;
+  uint64_t bayesian_promoted_voxels_ = 0;
+  uint64_t bayesian_demoted_voxels_ = 0;
   uint64_t bayesian_cleared_voxels_ = 0;
+  uint64_t ray_voxel_visits_ = 0;
   ros::Time last_cleanup_;
   ros::Time last_cloud_stamp_;
   bool dirty_ = false;
