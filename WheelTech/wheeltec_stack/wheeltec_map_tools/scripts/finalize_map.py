@@ -93,7 +93,7 @@ def main():
         action="store_false",
         help=(
             "use the old Patchwork++ label gate instead of rebuilding a "
-            "connected floor surface"
+            "slope-aware floor surface"
         ),
     )
     parser.set_defaults(terrain=True, terrain_reclassify=True)
@@ -138,14 +138,8 @@ def main():
     terrain_obstacle_static_raw = os.path.join(
         map_dir, "terrain_obstacles_static_camera_init.pcd"
     )
-    terrain_ground_observed_map = os.path.join(
-        map_dir, "terrain_ground_observed_map.pcd"
-    )
-    terrain_obstacle_observed_map = os.path.join(
-        map_dir, "terrain_obstacles_observed_map.pcd"
-    )
-    terrain_obstacle_reclassified_map = os.path.join(
-        map_dir, "terrain_obstacles_reclassified_map.pcd"
+    terrain_ground_candidates_map = os.path.join(
+        map_dir, "terrain_ground_candidates_map.pcd"
     )
     terrain_ground_map = os.path.join(map_dir, "terrain_ground_map.pcd")
     terrain_obstacle_map = os.path.join(map_dir, "terrain_obstacles_map.pcd")
@@ -212,48 +206,23 @@ def main():
         )
 
         terrain_reclassify_profile = None
-        reclassified_static_gate_voxel_size = None
         if args.terrain:
-            for source in (terrain_ground_raw, terrain_obstacle_raw):
-                if not os.path.isfile(source):
-                    raise FileNotFoundError(
-                        "Terrain classified PCD not found: " + source
-                    )
-
             if args.terrain_reclassify:
-                # Transform every accumulated observation first. Patchwork++
-                # labels may conflict indoors, so the reclassifier uses their
-                # combined lower envelope and a floor seed at the map origin.
-                for source, output in (
-                    (terrain_ground_raw, terrain_ground_observed_map),
-                    (terrain_obstacle_raw, terrain_obstacle_observed_map),
-                ):
-                    classified_transform = copy.deepcopy(transform_params)
-                    classified_transform["input_pcd"] = source
-                    classified_transform["output_pcd"] = output
-                    run(
-                        ["rosrun", "wheeltec_map_tools", "pcd_transform_node"]
-                        + private_args(classified_transform)
-                    )
-
+                # The final Bayesian point cloud is the single static authority.
+                # Conservative PMF seeds are expanded only through locally
+                # planar, slope-continuous cells, then all obstacles are rebuilt
+                # by height relative to that surface. Patchwork++ history is not
+                # accumulated or gated a second time in the default path.
                 terrain_reclassify_profile = load_yaml(os.path.join(
                     tools_dir, "config", "terrain_reclassify.yaml"
                 ))
                 reclassify_params = copy.deepcopy(terrain_reclassify_profile)
-                try:
-                    reclassified_static_gate_voxel_size = float(
-                        reclassify_params.pop("static_authority_voxel_size_m")
-                    )
-                except (KeyError, TypeError, ValueError):
-                    raise RuntimeError(
-                        "static_authority_voxel_size_m is missing from terrain "
-                        "reclassification config"
-                    )
+                reclassify_params.pop("ground_reference_radius_m", None)
                 reclassify_params.update({
-                    "input_ground_pcd": terrain_ground_observed_map,
-                    "input_obstacle_pcd": terrain_obstacle_observed_map,
+                    "input_pcd": public_pcd,
+                    "output_candidate_pcd": terrain_ground_candidates_map,
                     "output_ground_pcd": terrain_ground_map,
-                    "output_obstacle_pcd": terrain_obstacle_reclassified_map,
+                    "output_obstacle_pcd": terrain_obstacle_map,
                     # base_link starts at z=0 in odom; the transformed floor is
                     # therefore one measured base height below the map origin.
                     "seed_ground_z": -float(tf_cfg["z"]),
@@ -262,20 +231,12 @@ def main():
                     ["rosrun", "wheeltec_map_tools", "terrain_reclassify_node"]
                     + private_args(reclassify_params)
                 )
-                # The final Bayesian map remains the static authority, but the
-                # relaxed 0.20 m voxel match tolerates different sampling and
-                # prevents the former exact-gate loss. Only obstacle points are
-                # gated; the connected floor/free-space surface stays intact.
-                run(
-                    ["rosrun", "wheeltec_map_tools", "pcd_static_gate_node"]
-                    + private_args({
-                        "authority_pcd": public_pcd,
-                        "input_pcd": terrain_obstacle_reclassified_map,
-                        "output_pcd": terrain_obstacle_map,
-                        "voxel_size": reclassified_static_gate_voxel_size,
-                    })
-                )
             else:
+                for source in (terrain_ground_raw, terrain_obstacle_raw):
+                    if not os.path.isfile(source):
+                        raise FileNotFoundError(
+                            "Terrain classified PCD not found: " + source
+                        )
                 for source, gated in (
                     (terrain_ground_raw, terrain_ground_static_raw),
                     (terrain_obstacle_raw, terrain_obstacle_static_raw),
@@ -432,16 +393,8 @@ def main():
                     if args.terrain and not args.terrain_reclassify else None
                 ),
                 "terrain_2p5d_yaml": "terrain_2p5d.yaml" if args.terrain else None,
-                "terrain_ground_observations": (
-                    "terrain_ground_observed_map.pcd"
-                    if args.terrain and args.terrain_reclassify else None
-                ),
-                "terrain_obstacle_observations": (
-                    "terrain_obstacles_observed_map.pcd"
-                    if args.terrain and args.terrain_reclassify else None
-                ),
-                "terrain_obstacle_reclassified": (
-                    "terrain_obstacles_reclassified_map.pcd"
+                "terrain_ground_candidates": (
+                    "terrain_ground_candidates_map.pcd"
                     if args.terrain and args.terrain_reclassify else None
                 ),
             },
@@ -450,8 +403,8 @@ def main():
                 "enabled": True,
                 "profile": terrain_reclassify_profile,
                 "policy": (
-                    "lowest connected surface from mapping-origin floor seed; "
-                    "all observations reclassified by relative height"
+                    "conservative PMF seeds plus robust local-plane growth; "
+                    "Bayesian static points reclassified by relative height"
                 ),
             } if args.terrain and args.terrain_reclassify else {
                 "enabled": False,
@@ -463,12 +416,12 @@ def main():
                     else "raw_camera_init.pcd"
                 ),
                 "voxel_size": (
-                    reclassified_static_gate_voxel_size
-                    if args.terrain_reclassify else static_gate_voxel_size
+                    static_gate_voxel_size
+                    if not args.terrain_reclassify else None
                 ),
                 "policy": (
-                    "reclassified obstacle must share a relaxed voxel with the "
-                    "final Bayesian map; connected ground is not gated"
+                    "final Bayesian map is the direct terrain source; no "
+                    "second accumulated-label gate"
                     if args.terrain_reclassify else
                     "classified terrain voxel must exist in final Bayesian map"
                 ),

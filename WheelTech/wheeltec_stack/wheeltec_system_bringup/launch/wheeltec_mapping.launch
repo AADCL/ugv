@@ -1,6 +1,9 @@
 <launch>
 
   <arg name="map_name" default="current_mapping" />
+  <!-- Legacy Patchwork++ accumulation is diagnostic only. The default offline
+       terrain builder now works directly from the Bayesian static PCD. -->
+  <arg name="enable_online_terrain_diagnostics" default="false" />
   <!--
     Terrain mapping shares the Bayesian-filtered scan with the static PCD.
     Diagnostic fallback only: terrain_input_topic:=/cloud_registered_body
@@ -31,21 +34,24 @@
     <arg name="odom_frame_id" value="wheel_odom" />
   </include>
 
-  <!-- 7. PGM/2.5D use the same static-point decision as the deliverable PCD. -->
-  <include file="$(find wheeltec_cloud_adapter)/launch/cloud_adapter.launch">
+  <!-- 7. Optional online Patchwork++ diagnostics / legacy classified PCDs. -->
+  <include file="$(find wheeltec_cloud_adapter)/launch/cloud_adapter.launch"
+           if="$(arg enable_online_terrain_diagnostics)">
     <arg name="node_name" value="wheeltec_terrain_cloud_adapter" />
     <arg name="input_topic" value="$(arg terrain_input_topic)" />
     <arg name="output_topic" value="/cloud_registered_terrain" />
     <arg name="target_frame" value="terrain_sensor" />
   </include>
 
-  <include file="$(find wheeltec_terrain_filter)/launch/wheeltec_terrain_filter.launch">
+  <include file="$(find wheeltec_terrain_filter)/launch/wheeltec_terrain_filter.launch"
+           if="$(arg enable_online_terrain_diagnostics)">
     <!-- The accumulator consumes Patchwork++ directly. The terrain guard is a
          diagnostic branch and is disabled in deliverable maps. -->
     <arg name="enable_guard" value="false" />
   </include>
 
-  <include file="$(find wheeltec_terrain_filter)/launch/terrain_map_accumulator.launch">
+  <include file="$(find wheeltec_terrain_filter)/launch/terrain_map_accumulator.launch"
+           if="$(arg enable_online_terrain_diagnostics)">
     <arg name="map_name" value="$(arg map_name)" />
   </include>
 

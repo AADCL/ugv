@@ -23,7 +23,7 @@ WheelTech/
 │   ├── wheeltec_cloud_adapter/     # 点云坐标适配
 │   ├── wheeltec_pointcloud_mapper/ # 贝叶斯静态点云建图
 │   ├── wheeltec_map_tools/         # PCD/PGM/YAML 地图收尾工具
-│   ├── wheeltec_terrain_filter/    # 建图期 Patchwork++ 分类与地形诊断
+│   ├── wheeltec_terrain_filter/    # 可选 Patchwork++/地形诊断（默认建图不启动）
 │   ├── wheeltec_2p5d_navigation/   # 保存高程/坡度、坡度层与实时相对障碍
 │   ├── wheeltec_navigation/        # TEB 参数与导航日志
 │   └── fast_lio_localization/      # FAST-LIO 地图定位
@@ -81,7 +81,7 @@ roslaunch wheeltec_system_bringup wheeltec_mapping.launch \
 
 映射器使用两级体素结构：`0.20 m` 三维贝叶斯状态栅格是唯一动态/静态权威，`0.05 m` 精细栅格保存最终静态点云。静态晋升要求至少 25 帧、跨越 4 秒且命中率不低于 70%；自由空间使用三维 DDA 完整遍历每条选中射线穿过的体素，NX 默认每两个滤波点取一条射线，清除距离限制为 `20 m`。已确认体素被负证据降级时，整代精细点立即失效。过滤点云每 30 秒自动保存，正常退出时再次保存。
 
-完整 PCD、PGM 与 2.5D 地形图共用映射器发布的 `/wheeltec/static_scan`，再进入坐标适配、Patchwork++ 和纯分类累积；累计器不再重复判断静态资格。`terrain_guard` 只保留为可选诊断分支，正式建图默认不启动。导航局部避障仍读取实时点云，以保留对移动障碍的响应。
+正式建图默认只维护这一份贝叶斯静态 PCD，不再在线运行 Patchwork++ 和地形累积器。需要回归旧分类链路时，才显式设置 `enable_online_terrain_diagnostics:=true`；`terrain_guard` 仍只是可选诊断。导航局部避障继续读取实时点云，以保留对移动障碍的响应。
 
 完成采集后在建图终端按一次 `Ctrl+C`，映射器会在正常退出时再次保存 `filtered_camera_init.pcd`。随后单独生成交付地图：
 
@@ -89,7 +89,7 @@ roslaunch wheeltec_system_bringup wheeltec_mapping.launch \
 rosrun wheeltec_map_tools finalize_map.py factory_a
 ```
 
-该工具先确认 `filtered_camera_init.pcd` 与归档的 `raw_camera_init.pcd` 属于同一次建图，再把 Patchwork++ 的两类累计点合并为观测集：从建图原点的已知地面出发重建连续最低地面，按相对地面 `0.04-1.50 m` 重新提取障碍，最后仅用最终贝叶斯静态 PCD 对障碍做 `0.20 m` 宽松体素确认。这样不会把室内顶棚当地面，也不会因传感器采样不完全重合而再次丢掉低矮障碍；随后生成 NDT/PGM 兼容资产以及 `terrain_2p5d.yaml` 和六层地形文件。地图保存不依赖手动 finish 服务。
+该工具先确认 `filtered_camera_init.pcd` 与归档的 `raw_camera_init.pcd` 属于同一次建图，再直接以最终贝叶斯 `public_map.pcd` 为唯一来源：大窗口 PMF 只产生保守地面种子，鲁棒局部平面把种子沿连续坡面扩展，并按相对地面 `0.04-1.50 m` 重新提取障碍。窄墙链、台阶和断开的顶棚不能仅凭逐格高度差进入地面；地面插值还要求附近存在原点云 XY 观测。随后生成 NDT/PGM 兼容资产以及 `terrain_2p5d.yaml` 和六层地形文件。地图保存不依赖手动 finish 服务。
 
 ## 定位与导航
 
