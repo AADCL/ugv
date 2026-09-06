@@ -89,7 +89,7 @@ roslaunch wheeltec_system_bringup wheeltec_mapping.launch \
 rosrun wheeltec_map_tools finalize_map.py factory_a
 ```
 
-该工具先确认 `filtered_camera_init.pcd` 与归档的 `raw_camera_init.pcd` 属于同一次建图，再以最终贝叶斯静态 PCD 按 `0.05 m` 体素门控分类点云，随后生成 NDT/PGM 兼容资产以及 `terrain_2p5d.yaml` 和高程、坡度、粗糙度、台阶、代价、置信度六层地图。地图保存不依赖手动 finish 服务。
+该工具先确认 `filtered_camera_init.pcd` 与归档的 `raw_camera_init.pcd` 属于同一次建图，再把 Patchwork++ 的两类累计点合并为观测集：从建图原点的已知地面出发重建连续最低地面，按相对地面 `0.04-1.50 m` 重新提取障碍，最后仅用最终贝叶斯静态 PCD 对障碍做 `0.20 m` 宽松体素确认。这样不会把室内顶棚当地面，也不会因传感器采样不完全重合而再次丢掉低矮障碍；随后生成 NDT/PGM 兼容资产以及 `terrain_2p5d.yaml` 和六层地形文件。地图保存不依赖手动 finish 服务。
 
 ## 定位与导航
 

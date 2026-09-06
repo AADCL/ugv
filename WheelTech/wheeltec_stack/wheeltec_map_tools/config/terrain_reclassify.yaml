@@ -1,0 +1,33 @@
+# Rebuild a single, gravity-aligned floor surface from the complete terrain
+# observations. Patchwork++ labels are treated only as observations; their
+# historical ground/nonground assignment is not trusted during finalization.
+resolution: 0.05
+padding_m: 0.50
+ground_candidate_percentile: 0.20
+
+# The mapping session starts with base_link at the map origin. seed_ground_z is
+# overridden by finalize_map.py from the measured base-to-floor geometry.
+seed_x: 0.0
+seed_y: 0.0
+seed_ground_z: -0.15
+seed_radius_m: 1.50
+seed_height_tolerance_m: 0.12
+
+# Bridge sparse LiDAR cells while refusing disconnected horizontal layers such
+# as ceilings. A connected surface may rise at the configured vehicle limit.
+connect_radius_m: 0.50
+max_ground_slope_deg: 22.0
+max_ground_step_m: 0.01
+ground_reference_radius_m: 0.35
+min_connected_ground_cells: 100
+
+# Obstacles are re-extracted from all accumulated points relative to the trusted
+# floor. This is intentionally below the previous 0.08 m wheel-radius heuristic.
+min_obstacle_relative_height_m: 0.04
+max_obstacle_relative_height_m: 1.50
+
+# Reconfirm only the reclassified obstacle points against the final Bayesian
+# static map. 0.20 m was selected from the 09052217 replay: it retained 12.32%
+# occupied/known cells versus the realistic ungated reference's 12.66%, while
+# removing substantially more accumulated moving-object residue.
+static_authority_voxel_size_m: 0.20
