@@ -8,6 +8,8 @@ obstacle_min_z: 0.05
 obstacle_max_z: 1.20
 
 free_dilation_m: 0.10
+# Conservative swept corridor around the physically traversed base-link path.
+free_evidence_radius_m: 0.20
 obstacle_inflation_m: 0.00
 
 # Only nonground points supported by nearby ground and within this relative

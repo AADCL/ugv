@@ -22,7 +22,8 @@ seed_ground_z: -0.15
 seed_radius_m: 1.0
 seed_height_tolerance_m: 0.12
 trusted_seed_height_tolerance_m: 0.08
-trusted_seed_max_vertical_offset_m: 1.50
+# PMF low-surface cells are distributed terrain supports and are no longer
+# compared with one fixed global Z. This preserves long ramps and descents.
 
 # Reject narrow wall/edge chains before region growth. A candidate must agree
 # with a two-dimensionally supported local plane, not only with a neighbor's Z.
@@ -45,8 +46,15 @@ min_connected_ground_cells: 100
 # Fit the final dense surface only where the source cloud has nearby XY
 # evidence. This closes LiDAR sampling holes without declaring unseen space free.
 surface_fit_radius_m: 0.80
-surface_observation_radius_m: 0.10
+surface_observation_radius_m: 0.15
+# Fill only internal sampling gaps with connected support on opposite sides.
+# One-sided unobserved boundaries, drop-offs and room exteriors stay unknown.
+surface_gap_fill_radius_m: 0.30
 surface_min_candidates: 4
+# Keep multiple large floor regions when sparse scans split a real ramp, while
+# rejecting small disconnected PMF islands (ceilings, ledges and reflections).
+surface_min_component_cells: 100
+surface_min_component_fraction: 0.03
 
 # Re-extract obstacles from the same Bayesian static source relative to ground.
 min_obstacle_relative_height_m: 0.04

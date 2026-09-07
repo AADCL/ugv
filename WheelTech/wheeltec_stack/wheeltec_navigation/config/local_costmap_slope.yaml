@@ -44,5 +44,6 @@ obstacle_layer:
     expected_update_rate: 0.20
 
 inflation_layer:
-  inflation_radius: 0.25
+  # Match the padded 0.22 m half-width used by the global costmap.
+  inflation_radius: 0.22
   cost_scaling_factor: 3.0

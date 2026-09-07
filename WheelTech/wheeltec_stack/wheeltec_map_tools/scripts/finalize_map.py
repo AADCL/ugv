@@ -130,6 +130,13 @@ def main():
 
     raw_pcd = os.path.join(map_dir, "raw_camera_init.pcd")
     public_pcd = os.path.join(map_dir, "public_map.pcd")
+    source_traversed_path = os.path.join(
+        os.path.dirname(os.path.abspath(source_pcd)),
+        "traversed_path_map.pcd"
+    )
+    archived_traversed_path = os.path.join(
+        map_dir, "traversed_path_map.pcd"
+    )
     terrain_ground_raw = os.path.join(map_dir, "terrain_ground_camera_init.pcd")
     terrain_obstacle_raw = os.path.join(map_dir, "terrain_obstacles_camera_init.pcd")
     terrain_ground_static_raw = os.path.join(
@@ -160,6 +167,30 @@ def main():
         )
     else:
         print("[KEEP] existing raw PCD is identical to filtered source -> " + raw_pcd)
+
+    traversed_path = None
+    if os.path.isfile(source_traversed_path):
+        if os.path.abspath(source_traversed_path) == os.path.abspath(
+                archived_traversed_path):
+            traversed_path = archived_traversed_path
+        elif not os.path.isfile(archived_traversed_path) or args.replace_raw:
+            shutil.copy2(source_traversed_path, archived_traversed_path)
+            traversed_path = archived_traversed_path
+            print("[OK] archived traversed path -> " + traversed_path)
+        elif not filecmp.cmp(
+                source_traversed_path, archived_traversed_path, shallow=False):
+            raise RuntimeError(
+                "Traversed path differs from the archived evidence; refusing "
+                "to mix mapping sessions. Re-run with --replace-raw."
+            )
+        else:
+            traversed_path = archived_traversed_path
+            print("[KEEP] existing traversed path matches source -> " + traversed_path)
+    else:
+        print(
+            "[WARN] no traversed_path_map.pcd beside the source PCD; "
+            "ground-missing gaps will remain unknown"
+        )
 
     mapper_profile = load_yaml(os.path.join(
         mapper_dir, "config", "mapper.yaml"
@@ -351,10 +382,17 @@ def main():
             else:
                 params["input_pcd"] = public_pcd
 
+            # Only the normal occupancy maps consume physically traversed free
+            # space. The terrain-cost map keeps missing slope cells unknown.
+            if traversed_path is not None and name in ("raw", "nav"):
+                params["free_evidence_pcd"] = traversed_path
+
             # Record the effective parameters after terrain reclassification
             # overrides, without embedding machine-specific absolute PCD paths.
             effective_profile = copy.deepcopy(params)
-            for path_key in ("ground_pcd", "obstacle_pcd", "input_pcd"):
+            for path_key in (
+                    "ground_pcd", "obstacle_pcd", "input_pcd",
+                    "free_evidence_pcd"):
                 effective_profile.pop(path_key, None)
             profile_snapshot[name] = effective_profile
 
@@ -375,10 +413,15 @@ def main():
             "frames": {
                 "raw_pcd": "camera_init",
                 "public_map": "map",
+                "traversed_path": "odom (same coordinates as saved map)",
             },
             "files": {
                 "raw_pcd": "raw_camera_init.pcd",
                 "public_pcd": "public_map.pcd",
+                "traversed_path_pcd": (
+                    "traversed_path_map.pcd"
+                    if traversed_path is not None else None
+                ),
                 "raw_map_yaml": "map_raw.yaml",
                 "nav_map_yaml": "map.yaml",
                 "terrain_cost_map_yaml": "terrain_cost.yaml" if args.terrain else None,
@@ -426,6 +469,19 @@ def main():
                     "classified terrain voxel must exist in final Bayesian map"
                 ),
             } if args.terrain else None,
+            "free_space_authority": {
+                "pcd": (
+                    "traversed_path_map.pcd"
+                    if traversed_path is not None else None
+                ),
+                "policy": (
+                    "normal occupancy maps union ground evidence with the "
+                    "recorded base-link swept corridor; classified obstacles "
+                    "always override free evidence"
+                    if traversed_path is not None else
+                    "no recorded traversal evidence; only observed ground is free"
+                ),
+            },
             "geometry_snapshot": geometry,
             "map_generation": profile_snapshot,
         }
@@ -443,6 +499,8 @@ def main():
         print("  map dir    : " + map_dir)
         print("  raw PCD    : " + raw_pcd)
         print("  public PCD : " + public_pcd)
+        if traversed_path is not None:
+            print("  free path  : " + traversed_path)
         print("  nav map    : " + os.path.join(map_dir, "map.yaml"))
         if args.terrain:
             print("  slope costs: " + os.path.join(map_dir, "terrain_cost.yaml"))

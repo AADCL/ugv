@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstdint>
 #include <deque>
+#include <iostream>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -31,6 +32,7 @@ struct Plane {
 struct Cell {
   std::vector<float> samples;
   float candidate = std::numeric_limits<float>::quiet_NaN();
+  bool trusted_seed = false;
   bool valid_candidate = false;
   bool connected = false;
   Plane plane;
@@ -81,6 +83,7 @@ class TerrainReclassifier {
     validateCandidates();
     connectSurface();
     buildSurface();
+    filterSurfaceComponents();
     classifyObstacles();
     saveOutputs();
   }
@@ -101,8 +104,6 @@ class TerrainReclassifier {
     pnh_.param("seed_height_tolerance_m", seed_height_tolerance_m_, 0.12);
     pnh_.param("trusted_seed_height_tolerance_m",
                trusted_seed_height_tolerance_m_, 0.08);
-    pnh_.param("trusted_seed_max_vertical_offset_m",
-               trusted_seed_max_vertical_offset_m_, 1.50);
     pnh_.param("pmf/max_window_size", pmf_max_window_size_, 101);
     pnh_.param("pmf/slope", pmf_slope_, 0.40);
     pnh_.param("pmf/initial_distance_m", pmf_initial_distance_m_, 0.04);
@@ -124,8 +125,14 @@ class TerrainReclassifier {
     pnh_.param("max_ground_step_m", max_ground_step_m_, 0.015);
     pnh_.param("surface_fit_radius_m", surface_fit_radius_m_, 0.80);
     pnh_.param("surface_observation_radius_m",
-               surface_observation_radius_m_, 0.10);
+               surface_observation_radius_m_, 0.15);
+    pnh_.param("surface_gap_fill_radius_m",
+               surface_gap_fill_radius_m_, 0.30);
     pnh_.param("surface_min_candidates", surface_min_candidates_, 4);
+    pnh_.param("surface_min_component_cells",
+               surface_min_component_cells_, 100);
+    pnh_.param("surface_min_component_fraction",
+               surface_min_component_fraction_, 0.03);
     pnh_.param("min_obstacle_relative_height_m",
                min_obstacle_relative_height_m_, 0.04);
     pnh_.param("max_obstacle_relative_height_m",
@@ -139,7 +146,6 @@ class TerrainReclassifier {
     if (cell_size_ <= 0.0 || candidate_percentile_ < 0.0 ||
         candidate_percentile_ > 1.0 || seed_radius_m_ < cell_size_ ||
         trusted_seed_height_tolerance_m_ <= 0.0 ||
-        trusted_seed_max_vertical_offset_m_ <= 0.0 ||
         pmf_max_window_size_ < 3 || pmf_slope_ < 0.0 ||
         pmf_initial_distance_m_ < 0.0 ||
         pmf_max_distance_m_ < pmf_initial_distance_m_ || pmf_base_ < 1.0 ||
@@ -152,7 +158,11 @@ class TerrainReclassifier {
         connection_max_normal_delta_deg_ <= 0.0 ||
         connection_max_normal_delta_deg_ >= 90.0 || max_ground_step_m_ < 0.0 ||
         surface_fit_radius_m_ < cell_size_ ||
-        surface_observation_radius_m_ < 0.0 || surface_min_candidates_ < 3 ||
+        surface_observation_radius_m_ < 0.0 ||
+        surface_gap_fill_radius_m_ < surface_observation_radius_m_ ||
+        surface_min_candidates_ < 3 || surface_min_component_cells_ < 1 ||
+        surface_min_component_fraction_ < 0.0 ||
+        surface_min_component_fraction_ > 1.0 ||
         min_obstacle_relative_height_m_ < 0.0 ||
         max_obstacle_relative_height_m_ <= min_obstacle_relative_height_m_) {
       throw std::runtime_error("Invalid terrain surface parameters");
@@ -167,6 +177,9 @@ class TerrainReclassifier {
     observation_offsets_ = diskOffsets(std::max(
         0, static_cast<int>(std::ceil(
                surface_observation_radius_m_ / cell_size_))));
+    gap_fill_offsets_ = diskOffsets(std::max(
+        1, static_cast<int>(
+               std::ceil(surface_gap_fill_radius_m_ / cell_size_))));
   }
 
   void loadInput() {
@@ -395,6 +408,7 @@ class TerrainReclassifier {
 
   bool compatible(const Cell& current, const Cell& neighbor,
                   int dx, int dy) const {
+    if (!current.valid_candidate || !neighbor.valid_candidate) return false;
     const double world_dx = dx * cell_size_;
     const double world_dy = dy * cell_size_;
     const double distance = std::hypot(world_dx, world_dy);
@@ -429,25 +443,24 @@ class TerrainReclassifier {
     std::deque<int> queue;
     for (const Point& point : trusted_seeds_.points) {
       if (!finite(point)) continue;
-      if (std::abs(point.z - seed_ground_z_) >
-          trusted_seed_max_vertical_offset_m_) {
-        ++rejected_elevated_seed_points_;
-        continue;
-      }
       int x = 0;
       int y = 0;
       if (!pointCell(point, &x, &y)) continue;
       Cell& cell = cells_[index(x, y)];
       if (!std::isfinite(cell.candidate) ||
           std::abs(cell.candidate - point.z) >
-              trusted_seed_height_tolerance_m_ ||
-          cell.connected) {
+              trusted_seed_height_tolerance_m_) {
         continue;
       }
-      cell.connected = true;
-      if (cell.valid_candidate) queue.push_back(index(x, y));
-      ++trusted_seed_cells_;
+      if (!cell.trusted_seed) {
+        cell.trusted_seed = true;
+        ++trusted_seed_cells_;
+      }
     }
+    // The origin seed is a useful frame sanity check when local observations
+    // are planar enough.  It must not be the only growth source: a saved PCD
+    // contains no sensor trajectory, and a ramp edge or a single sparse scan
+    // gap can make the origin cell fail strict local-plane validation.
     const double seed_radius_sq = seed_radius_m_ * seed_radius_m_;
     for (int y = 0; y < height_; ++y) {
       for (int x = 0; x < width_; ++x) {
@@ -463,13 +476,30 @@ class TerrainReclassifier {
           if (!cell.connected) {
             cell.connected = true;
             queue.push_back(index(x, y));
+            ++origin_seed_cells_;
           }
         }
       }
     }
-    seed_cells_ = queue.size();
+    // PMF selects the locally lowest morphological surface.  All of its cells
+    // provide distributed support for the later robust plane fit even when
+    // their absolute Z differs greatly from the map origin.  Only locally
+    // validated PMF cells are allowed to grow into neighboring candidates.
+    for (int y = 0; y < height_; ++y) {
+      for (int x = 0; x < width_; ++x) {
+        Cell& cell = cells_[index(x, y)];
+        if (!cell.trusted_seed) continue;
+        ++distributed_seed_cells_;
+        if (cell.connected) continue;
+        cell.connected = true;
+        if (cell.valid_candidate) queue.push_back(index(x, y));
+      }
+    }
+    if (origin_seed_cells_ == 0) {
+      ROS_WARN("No locally planar origin floor seed; using distributed PMF anchors");
+    }
     if (queue.empty()) {
-      throw std::runtime_error("No valid floor seed was found near the map origin");
+      throw std::runtime_error("No valid distributed terrain seed was found");
     }
 
     while (!queue.empty()) {
@@ -493,11 +523,42 @@ class TerrainReclassifier {
 
     for (const Cell& cell : cells_) {
       connected_cells_ += cell.connected ? 1 : 0;
+      connected_trusted_seed_cells_ +=
+          cell.connected && cell.trusted_seed ? 1 : 0;
     }
     if (connected_cells_ < static_cast<std::size_t>(min_connected_ground_cells_)) {
       throw std::runtime_error(
           "Connected terrain is too small; check the seed and plane parameters");
     }
+  }
+
+  bool hasOpposingConnectedSupport(int center_x, int center_y) const {
+    uint8_t sector_mask = 0;
+    for (const auto& offset : gap_fill_offsets_) {
+      if (offset.first == 0 && offset.second == 0) continue;
+      const int x = center_x + offset.first;
+      const int y = center_y + offset.second;
+      if (!inside(x, y)) continue;
+      const Cell& cell = cells_[index(x, y)];
+      if (!cell.connected || !std::isfinite(cell.candidate)) continue;
+      const double angle = std::atan2(
+          static_cast<double>(offset.second),
+          static_cast<double>(offset.first));
+      int sector = static_cast<int>(std::floor(
+          (angle + M_PI + M_PI / 8.0) / (M_PI / 4.0)));
+      sector %= 8;
+      if (sector < 0) sector += 8;
+      sector_mask |= static_cast<uint8_t>(1u << sector);
+    }
+    for (int first = 0; first < 8; ++first) {
+      if ((sector_mask & (1u << first)) == 0) continue;
+      for (int second = first + 1; second < 8; ++second) {
+        if ((sector_mask & (1u << second)) == 0) continue;
+        const int separation = std::min(second - first, 8 - (second - first));
+        if (separation >= 3) return true;
+      }
+    }
+    return false;
   }
 
   void buildSurface() {
@@ -525,7 +586,9 @@ class TerrainReclassifier {
             break;
           }
         }
-        if (!observed_nearby) continue;
+        const bool internal_gap =
+            !observed_nearby && hasOpposingConnectedSupport(x, y);
+        if (!observed_nearby && !internal_gap) continue;
 
         Plane surface;
         if (!fitPlane(x, y, surface_offsets_, true,
@@ -533,6 +596,89 @@ class TerrainReclassifier {
           continue;
         }
         cell.surface_z = static_cast<float>(surface.c);
+        Point point;
+        point.x = static_cast<float>(min_x_ + (x + 0.5) * cell_size_);
+        point.y = static_cast<float>(min_y_ + (y + 0.5) * cell_size_);
+        point.z = cell.surface_z;
+        point.intensity = 0.0f;
+        ground_.push_back(point);
+        if (internal_gap) ++gap_filled_surface_cells_;
+      }
+    }
+  }
+
+  void filterSurfaceComponents() {
+    std::vector<int> labels(cells_.size(), -1);
+    std::vector<std::vector<int>> components;
+    const int neighbor_dx[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
+    const int neighbor_dy[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
+
+    for (int y = 0; y < height_; ++y) {
+      for (int x = 0; x < width_; ++x) {
+        const int start = index(x, y);
+        if (!std::isfinite(cells_[start].surface_z) || labels[start] >= 0) {
+          continue;
+        }
+        const int component_id = static_cast<int>(components.size());
+        components.emplace_back();
+        std::deque<int> queue;
+        queue.push_back(start);
+        labels[start] = component_id;
+        while (!queue.empty()) {
+          const int current = queue.front();
+          queue.pop_front();
+          components.back().push_back(current);
+          const int current_x = current % width_;
+          const int current_y = current / width_;
+          for (int direction = 0; direction < 8; ++direction) {
+            const int neighbor_x = current_x + neighbor_dx[direction];
+            const int neighbor_y = current_y + neighbor_dy[direction];
+            if (!inside(neighbor_x, neighbor_y)) continue;
+            const int neighbor = index(neighbor_x, neighbor_y);
+            if (labels[neighbor] >= 0 ||
+                !std::isfinite(cells_[neighbor].surface_z)) {
+              continue;
+            }
+            labels[neighbor] = component_id;
+            queue.push_back(neighbor);
+          }
+        }
+      }
+    }
+
+    surface_component_count_ = components.size();
+    if (components.empty()) {
+      throw std::runtime_error("No terrain surface survived local-plane fitting");
+    }
+    std::size_t largest_component_cells = 0;
+    for (const auto& component : components) {
+      largest_component_cells = std::max(
+          largest_component_cells, component.size());
+    }
+    const std::size_t relative_minimum = static_cast<std::size_t>(std::ceil(
+        surface_min_component_fraction_ * largest_component_cells));
+    const std::size_t minimum_cells = std::max(
+        static_cast<std::size_t>(surface_min_component_cells_),
+        relative_minimum);
+
+    for (const auto& component : components) {
+      if (component.size() >= minimum_cells) {
+        ++kept_surface_component_count_;
+        continue;
+      }
+      removed_surface_cells_ += component.size();
+      for (const int cell_index : component) {
+        cells_[cell_index].surface_z =
+            std::numeric_limits<float>::quiet_NaN();
+      }
+    }
+
+    ground_.clear();
+    ground_.reserve(cells_.size() - removed_surface_cells_);
+    for (int y = 0; y < height_; ++y) {
+      for (int x = 0; x < width_; ++x) {
+        const Cell& cell = cells_[index(x, y)];
+        if (!std::isfinite(cell.surface_z)) continue;
         Point point;
         point.x = static_cast<float>(min_x_ + (x + 0.5) * cell_size_);
         point.y = static_cast<float>(min_y_ + (y + 0.5) * cell_size_);
@@ -581,13 +727,17 @@ class TerrainReclassifier {
     }
     ROS_INFO(
         "Terrain surface input=%zu pmf=%zu candidates=%zu valid=%zu "
-        "growth_seeds=%zu trusted_cells=%zu rejected_elevated_seeds=%zu "
-        "connected=%zu surface=%zu obstacles=%zu no_surface=%zu",
+        "origin_seeds=%zu distributed_seeds=%zu trusted_cells=%zu "
+        "trusted_connected=%zu "
+        "connected=%zu surface=%zu gap_filled=%zu components=%zu kept=%zu "
+        "component_removed=%zu obstacles=%zu no_surface=%zu",
         input_->size(), trusted_seeds_.size(), candidate_cells_,
-        valid_candidate_cells_, seed_cells_, trusted_seed_cells_,
-        rejected_elevated_seed_points_,
-        connected_cells_, ground_.size(), obstacles_.size(),
-        points_without_surface_);
+        valid_candidate_cells_, origin_seed_cells_, distributed_seed_cells_,
+        trusted_seed_cells_,
+        connected_trusted_seed_cells_,
+        connected_cells_, ground_.size(), gap_filled_surface_cells_,
+        surface_component_count_, kept_surface_component_count_,
+        removed_surface_cells_, obstacles_.size(), points_without_surface_);
     ROS_INFO(
         "Terrain surface cell=%.3f local_radius=%.3f connect_radius=%.3f "
         "fit_radius=%.3f max_slope=%.1fdeg plane_rmse=%.3f",
@@ -609,7 +759,6 @@ class TerrainReclassifier {
   double seed_radius_m_ = 1.0;
   double seed_height_tolerance_m_ = 0.12;
   double trusted_seed_height_tolerance_m_ = 0.08;
-  double trusted_seed_max_vertical_offset_m_ = 1.50;
   int pmf_max_window_size_ = 101;
   double pmf_slope_ = 0.40;
   double pmf_initial_distance_m_ = 0.04;
@@ -629,8 +778,11 @@ class TerrainReclassifier {
   double connection_max_normal_delta_deg_ = 20.0;
   double max_ground_step_m_ = 0.015;
   double surface_fit_radius_m_ = 0.80;
-  double surface_observation_radius_m_ = 0.10;
+  double surface_observation_radius_m_ = 0.15;
+  double surface_gap_fill_radius_m_ = 0.30;
   int surface_min_candidates_ = 4;
+  int surface_min_component_cells_ = 100;
+  double surface_min_component_fraction_ = 0.03;
   double min_obstacle_relative_height_m_ = 0.04;
   double max_obstacle_relative_height_m_ = 1.50;
   int min_connected_ground_cells_ = 100;
@@ -645,16 +797,22 @@ class TerrainReclassifier {
   std::vector<std::pair<int, int>> connect_offsets_;
   std::vector<std::pair<int, int>> surface_offsets_;
   std::vector<std::pair<int, int>> observation_offsets_;
+  std::vector<std::pair<int, int>> gap_fill_offsets_;
   int width_ = 0;
   int height_ = 0;
   double min_x_ = 0.0;
   double min_y_ = 0.0;
   std::size_t candidate_cells_ = 0;
   std::size_t valid_candidate_cells_ = 0;
-  std::size_t seed_cells_ = 0;
+  std::size_t origin_seed_cells_ = 0;
+  std::size_t distributed_seed_cells_ = 0;
   std::size_t trusted_seed_cells_ = 0;
-  std::size_t rejected_elevated_seed_points_ = 0;
+  std::size_t connected_trusted_seed_cells_ = 0;
   std::size_t connected_cells_ = 0;
+  std::size_t gap_filled_surface_cells_ = 0;
+  std::size_t surface_component_count_ = 0;
+  std::size_t kept_surface_component_count_ = 0;
+  std::size_t removed_surface_cells_ = 0;
   std::size_t points_without_surface_ = 0;
 };
 
@@ -664,6 +822,8 @@ int main(int argc, char** argv) {
     TerrainReclassifier reclassifier;
   } catch (const std::exception& error) {
     ROS_FATAL("Terrain reclassification failed: %s", error.what());
+    std::cerr << "Terrain reclassification failed: " << error.what()
+              << std::endl;
     return 1;
   }
   return 0;

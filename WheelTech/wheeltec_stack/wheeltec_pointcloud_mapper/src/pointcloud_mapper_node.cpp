@@ -52,12 +52,15 @@ struct OccupancyVoxelState {
   double log_odds = 0.0;
   uint32_t hit_scans = 0;
   uint32_t miss_scans = 0;
+  uint32_t consecutive_miss_scans = 0;
   uint64_t last_hit_scan = std::numeric_limits<uint64_t>::max();
   uint64_t last_miss_scan = std::numeric_limits<uint64_t>::max();
   ros::Time first_hit;
   ros::Time last_hit;
+  ros::Time first_consecutive_miss;
   ros::Time last_seen;
   uint64_t generation = 0;
+  bool confirmed_static = false;
 };
 
 struct MapVoxelState {
@@ -83,6 +86,8 @@ class PointcloudMapper {
 
     odom_sub_ = nh_.subscribe(input_odom_, 20,
                               &PointcloudMapper::odomCallback, this);
+    trajectory_odom_sub_ = nh_.subscribe(
+        trajectory_odom_, 20, &PointcloudMapper::trajectoryOdomCallback, this);
     cloud_sub_ = nh_.subscribe(input_cloud_, 2,
                                &PointcloudMapper::cloudCallback, this);
     save_service_ = pnh_.advertiseService(
@@ -97,7 +102,9 @@ class PointcloudMapper {
         &PointcloudMapper::autosaveTimer, this);
 
     ROS_INFO_STREAM("wheeltec_pointcloud_mapper: " << input_cloud_ << " + "
-                    << input_odom_ << " -> " << output_path_);
+                    << input_odom_ << " -> " << output_path_
+                    << "; traversed base path " << trajectory_odom_ << " -> "
+                    << trajectory_output_path_);
   }
 
   ~PointcloudMapper() {
@@ -116,6 +123,9 @@ class PointcloudMapper {
     pnh_.param<std::string>("input_cloud", input_cloud_,
                             "/cloud_registered");
     pnh_.param<std::string>("input_odom", input_odom_, "/Odometry");
+    pnh_.param<std::string>("trajectory_odom", trajectory_odom_,
+                            "/fastlio_odom");
+    pnh_.param<std::string>("trajectory_frame", trajectory_frame_, "odom");
     pnh_.param<std::string>("static_scan_topic", static_scan_topic_,
                             "/wheeltec/static_scan");
     pnh_.param<std::string>("static_map_topic", static_map_topic_,
@@ -124,6 +134,8 @@ class PointcloudMapper {
                             "/wheeltec/dynamic_points");
     pnh_.param<std::string>("output_path", output_path_,
                             "/tmp/filtered_camera_init.pcd");
+    pnh_.param<std::string>("trajectory_output_path", trajectory_output_path_,
+                            "/tmp/traversed_path_map.pcd");
     pnh_.param("min_range", min_range_, 0.5);
     pnh_.param("max_range", max_range_, 50.0);
     pnh_.param("scan_voxel_size", scan_voxel_size_, 0.10);
@@ -149,6 +161,10 @@ class PointcloudMapper {
     pnh_.param("dynamic_filter/min_observation_span",
                min_observation_span_, 2.0);
     pnh_.param("dynamic_filter/min_hit_ratio", min_hit_ratio_, 0.70);
+    pnh_.param("dynamic_filter/min_clear_miss_scans",
+               min_clear_miss_scans_, 8);
+    pnh_.param("dynamic_filter/min_clear_miss_span",
+               min_clear_miss_span_, 0.75);
     pnh_.param("dynamic_filter/ray_stride", ray_stride_, 4);
     pnh_.param("dynamic_filter/max_clearing_range",
                max_clearing_range_, 20.0);
@@ -166,6 +182,8 @@ class PointcloudMapper {
         static_cast<std::size_t>(std::max(1, max_map_voxels_param));
     pnh_.param("map/autosave_period", autosave_period_, 30.0);
     pnh_.param("map/save_on_shutdown", save_on_shutdown_, true);
+    pnh_.param("map/trajectory_min_distance",
+               trajectory_min_distance_, 0.05);
     pnh_.param("map_publish_period", map_publish_period_, 2.0);
     pnh_.param("publish_dynamic_points", publish_dynamic_, false);
     pnh_.param("max_odom_age", max_odom_age_, 0.20);
@@ -186,6 +204,8 @@ class PointcloudMapper {
     min_hit_scans_ = std::max(1, min_hit_scans_);
     min_observation_span_ = std::max(0.0, min_observation_span_);
     min_hit_ratio_ = std::max(0.0, std::min(1.0, min_hit_ratio_));
+    min_clear_miss_scans_ = std::max(1, min_clear_miss_scans_);
+    min_clear_miss_span_ = std::max(0.0, min_clear_miss_span_);
     ray_stride_ = std::max(1, ray_stride_);
     max_clearing_range_ = std::max(temporal_voxel_size_,
                                    max_clearing_range_);
@@ -193,6 +213,7 @@ class PointcloudMapper {
                                     ray_endpoint_margin_);
     map_publish_period_ = std::max(0.1, map_publish_period_);
     autosave_period_ = std::max(1.0, autosave_period_);
+    trajectory_min_distance_ = std::max(0.01, trajectory_min_distance_);
 
     if (hit_log_odds_ <= 0.0 || miss_log_odds_ >= 0.0) {
       ROS_WARN("Invalid Bayesian probabilities; using hit=0.70, miss=0.40");
@@ -212,6 +233,39 @@ class PointcloudMapper {
   void odomCallback(const nav_msgs::OdometryConstPtr& msg) {
     latest_odom_ = *msg;
     have_odom_ = true;
+  }
+
+  void trajectoryOdomCallback(const nav_msgs::OdometryConstPtr& msg) {
+    if (!msg->header.frame_id.empty() &&
+        msg->header.frame_id != trajectory_frame_) {
+      ROS_ERROR_THROTTLE(
+          2.0, "Mapper ignored trajectory frame '%s'; expected '%s'",
+          msg->header.frame_id.c_str(), trajectory_frame_.c_str());
+      return;
+    }
+    const auto& position = msg->pose.pose.position;
+    if (!std::isfinite(position.x) || !std::isfinite(position.y) ||
+        !std::isfinite(position.z)) {
+      ROS_WARN_THROTTLE(2.0, "Mapper ignored a non-finite trajectory pose");
+      return;
+    }
+
+    const Eigen::Vector3d current(position.x, position.y, position.z);
+    if (have_last_trajectory_position_ &&
+        (current - last_trajectory_position_).norm() <
+            trajectory_min_distance_) {
+      return;
+    }
+
+    Point point;
+    point.x = static_cast<float>(position.x);
+    point.y = static_cast<float>(position.y);
+    point.z = static_cast<float>(position.z);
+    point.intensity = 1.0F;
+    trajectory_.push_back(point);
+    last_trajectory_position_ = current;
+    have_last_trajectory_position_ = true;
+    dirty_ = true;
   }
 
   VoxelKey voxelKey(const Point& point, double voxel_size) const {
@@ -236,7 +290,7 @@ class PointcloudMapper {
     return state;
   }
 
-  bool isStatic(const OccupancyVoxelState& state) const {
+  bool candidateMeetsStaticCriteria(const OccupancyVoxelState& state) const {
     if (!dynamic_filter_enable_) {
       return true;
     }
@@ -255,6 +309,10 @@ class PointcloudMapper {
                min_observation_span_;
   }
 
+  bool isStatic(const OccupancyVoxelState& state) const {
+    return !dynamic_filter_enable_ || state.confirmed_static;
+  }
+
   void updateHit(const VoxelKey& key, const ros::Time& stamp) {
     OccupancyVoxelState& state = getOrCreateOccupancy(key);
     const bool was_static = isStatic(state);
@@ -265,11 +323,14 @@ class PointcloudMapper {
     state.last_hit_scan = scan_sequence_;
     state.log_odds = std::min(max_log_odds_, state.log_odds + hit_log_odds_);
     ++state.hit_scans;
+    state.consecutive_miss_scans = 0;
+    state.first_consecutive_miss = ros::Time();
     if (state.first_hit.isZero()) {
       state.first_hit = stamp;
     }
     state.last_hit = stamp;
-    if (!was_static && isStatic(state)) {
+    if (!was_static && candidateMeetsStaticCriteria(state)) {
+      state.confirmed_static = true;
       ++bayesian_promoted_voxels_;
       dirty_ = true;
     }
@@ -290,23 +351,24 @@ class PointcloudMapper {
     state.log_odds = std::max(min_log_odds_,
                               state.log_odds + miss_log_odds_);
     ++state.miss_scans;
-    if (state.log_odds <= clearing_log_odds_) {
-      if (was_static) {
-        ++bayesian_demoted_voxels_;
-      }
+    if (state.consecutive_miss_scans == 0) {
+      state.first_consecutive_miss = stamp;
+    }
+    ++state.consecutive_miss_scans;
+    const double consecutive_miss_span =
+        state.first_consecutive_miss.isZero()
+            ? 0.0
+            : std::max(0.0, (stamp - state.first_consecutive_miss).toSec());
+    const bool confirmed_clear =
+        state.log_odds <= clearing_log_odds_ &&
+        state.consecutive_miss_scans >=
+            static_cast<uint32_t>(min_clear_miss_scans_) &&
+        consecutive_miss_span >= min_clear_miss_span_;
+    if ((!was_static && state.log_odds <= clearing_log_odds_) ||
+        (was_static && confirmed_clear)) {
+      if (was_static) ++bayesian_demoted_voxels_;
       temporal_voxels_.erase(it);
       ++bayesian_cleared_voxels_;
-      dirty_ = true;
-    } else if (was_static && !isStatic(state)) {
-      // Once negative evidence demotes a confirmed voxel, invalidate every
-      // fine-map sample from that generation. A later reappearance must earn
-      // static status again instead of reviving stale geometry.
-      state.generation = next_occupancy_generation_++;
-      state.hit_scans = 0;
-      state.miss_scans = 0;
-      state.first_hit = ros::Time();
-      state.last_hit = ros::Time();
-      ++bayesian_demoted_voxels_;
       dirty_ = true;
     }
   }
@@ -682,13 +744,35 @@ class PointcloudMapper {
         *message = "PCL failed to write " + output_path_;
         return false;
       }
+      if (!trajectory_.empty()) {
+        const boost::filesystem::path trajectory_output(
+            trajectory_output_path_);
+        if (trajectory_output.has_parent_path()) {
+          boost::filesystem::create_directories(
+              trajectory_output.parent_path());
+        }
+        if (pcl::io::savePCDFileBinary(
+                trajectory_output_path_, trajectory_) != 0) {
+          *message = "PCL failed to write " + trajectory_output_path_;
+          return false;
+        }
+      } else if (!trajectory_output_path_.empty() &&
+                 boost::filesystem::exists(trajectory_output_path_)) {
+        // Reusing a map name must never pair a fresh static PCD with traversal
+        // evidence left by an older session.
+        boost::filesystem::remove(trajectory_output_path_);
+      }
     } catch (const std::exception& error) {
       *message = error.what();
       return false;
     }
     dirty_ = false;
     *message = "Saved " + std::to_string(map.size()) +
-               " fine static-map points to " + output_path_;
+               " fine static-map points to " + output_path_ + "; " +
+               std::to_string(trajectory_.size()) + " traversed base poses";
+    if (!trajectory_.empty()) {
+      *message += " to " + trajectory_output_path_;
+    }
     return true;
   }
 
@@ -707,6 +791,8 @@ class PointcloudMapper {
   bool resetMap(std_srvs::Empty::Request&, std_srvs::Empty::Response&) {
     temporal_voxels_.clear();
     map_voxels_.clear();
+    trajectory_.clear();
+    have_last_trajectory_position_ = false;
     frame_id_.clear();
     scan_sequence_ = 0;
     bayesian_promoted_voxels_ = 0;
@@ -722,6 +808,7 @@ class PointcloudMapper {
   ros::NodeHandle pnh_;
   ros::Subscriber cloud_sub_;
   ros::Subscriber odom_sub_;
+  ros::Subscriber trajectory_odom_sub_;
   ros::Publisher static_scan_pub_;
   ros::Publisher static_map_pub_;
   ros::Publisher dynamic_pub_;
@@ -732,10 +819,13 @@ class PointcloudMapper {
 
   std::string input_cloud_;
   std::string input_odom_;
+  std::string trajectory_odom_;
+  std::string trajectory_frame_;
   std::string static_scan_topic_;
   std::string static_map_topic_;
   std::string dynamic_topic_;
   std::string output_path_;
+  std::string trajectory_output_path_;
   std::string frame_id_;
   double min_range_ = 0.5;
   double max_range_ = 50.0;
@@ -765,6 +855,8 @@ class PointcloudMapper {
   int min_hit_scans_ = 8;
   double min_observation_span_ = 2.0;
   double min_hit_ratio_ = 0.70;
+  int min_clear_miss_scans_ = 8;
+  double min_clear_miss_span_ = 0.75;
   int ray_stride_ = 4;
   double max_clearing_range_ = 20.0;
   double ray_endpoint_margin_ = 0.30;
@@ -778,9 +870,13 @@ class PointcloudMapper {
   double map_publish_period_ = 2.0;
   bool publish_dynamic_ = false;
   double max_odom_age_ = 0.20;
+  double trajectory_min_distance_ = 0.05;
 
   nav_msgs::Odometry latest_odom_;
   bool have_odom_ = false;
+  Cloud trajectory_;
+  Eigen::Vector3d last_trajectory_position_ = Eigen::Vector3d::Zero();
+  bool have_last_trajectory_position_ = false;
   uint64_t scan_sequence_ = 0;
   uint64_t next_occupancy_generation_ = 1;
   uint64_t bayesian_promoted_voxels_ = 0;

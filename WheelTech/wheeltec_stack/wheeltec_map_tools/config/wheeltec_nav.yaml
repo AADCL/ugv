@@ -8,6 +8,9 @@ obstacle_min_z: 0.05
 obstacle_max_z: 1.20
 
 free_dilation_m: 0.10
+# Only a recorded base_link centre path may open ground-missing cells. 0.20 m
+# is the measured chassis half-width, so this does not bridge untraversed gaps.
+free_evidence_radius_m: 0.20
 # Do not bake inflation into the saved map. The move_base InflationLayer applies
 # runtime inflation, avoiding double inflation at narrow doors.
 obstacle_inflation_m: 0.00

@@ -23,5 +23,7 @@ terrain_slope_layer:
 
 inflation_layer:
   # The radius must exceed the 0.20 m inscribed radius of the chassis.
-  inflation_radius: 0.25
+  # 0.22 m equals the padded half-width of the 0.40 m chassis. This keeps
+  # the footprint protected while allowing a correctly mapped 0.60 m doorway.
+  inflation_radius: 0.22
   cost_scaling_factor: 3.0

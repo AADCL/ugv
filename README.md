@@ -5,7 +5,7 @@
 | 项目 | 平台与传感器 | 当前链路 | 项目入口 |
 |---|---|---|---|
 | Scout Mini | AgileX Scout Mini、Jetson、Livox Mid-360、RealSense D435i | CAN + FAST-LIO + 贝叶斯静态点 + Patchwork++ 建图 + PGM/高程坡度 + NDT + GlobalPlanner/TEB | [README](Scout_mini/README.md) · [文档](Scout_mini/docs/) |
-| WheelTech | WheelTech 四轮差速底盘、Jetson NX、Livox Mid-360、Orbbec Gemini 336L | 串口底盘 + FAST-LIO + 贝叶斯静态点 + Patchwork++ 建图 + PGM/高程坡度 + NDT + GlobalPlanner/TEB | [README](WheelTech/README.md) · [文档](WheelTech/文档/) |
+| WheelTech V5.0 | WheelTech 四轮差速底盘、Jetson NX、Livox Mid-360、Orbbec Gemini 336L | 串口底盘 + FAST-LIO + 可逆贝叶斯静态点 + 轨迹自由证据 + PGM 唯一静态占据 + 2.5D 坡度代价 + NDT + GlobalPlanner/TEB | [README](WheelTech/README.md) · [文档](WheelTech/docs/) |
 
 总体数据流：
 

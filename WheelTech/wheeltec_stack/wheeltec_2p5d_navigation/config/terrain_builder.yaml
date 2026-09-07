@@ -13,8 +13,12 @@ max_slope_deg: 25.0
 max_slope_cost: 80
 min_lethal_neighbors: 4
 
-# Fuse classified nonground returns into the terrain cost using local ground
-# height, while rejecting ceilings and overhead returns.
+# Static obstacles already come from map.pgm's StaticLayer. Keep this disabled
+# so the coarser 2.5D layer contributes slope cost only and does not duplicate
+# and enlarge the same obstacles in the global costmap.
+fuse_static_obstacles: false
+
+# Used only when fuse_static_obstacles is explicitly enabled.
 obstacle_ground_search_radius_m: 0.30
 obstacle_min_relative_height_m: 0.08
 obstacle_max_relative_height_m: 1.50

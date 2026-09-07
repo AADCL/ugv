@@ -2,8 +2,11 @@
   <arg name="map_name" default="current_mapping" />
   <arg name="input_cloud" default="/cloud_registered" />
   <arg name="input_odom" default="/Odometry" />
+  <arg name="trajectory_odom" default="/fastlio_odom" />
   <arg name="output_path"
        default="$(env HOME)/livox_fastlio/maps/$(arg map_name)/filtered_camera_init.pcd" />
+  <arg name="trajectory_output_path"
+       default="$(env HOME)/livox_fastlio/maps/$(arg map_name)/traversed_path_map.pcd" />
 
   <node pkg="wheeltec_pointcloud_mapper"
         type="pointcloud_mapper_node"
@@ -14,6 +17,8 @@
               file="$(find wheeltec_pointcloud_mapper)/config/mapper.yaml" />
     <param name="input_cloud" value="$(arg input_cloud)" />
     <param name="input_odom" value="$(arg input_odom)" />
+    <param name="trajectory_odom" value="$(arg trajectory_odom)" />
     <param name="output_path" value="$(arg output_path)" />
+    <param name="trajectory_output_path" value="$(arg trajectory_output_path)" />
   </node>
 </launch>

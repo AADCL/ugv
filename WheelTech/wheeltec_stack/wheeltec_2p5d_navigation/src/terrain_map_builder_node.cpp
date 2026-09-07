@@ -59,6 +59,7 @@ class TerrainMapBuilder {
     pnh_.param("max_slope_deg", max_slope_deg_, 25.0);
     pnh_.param("max_slope_cost", max_slope_cost_, 80);
     pnh_.param("min_lethal_neighbors", min_lethal_neighbors_, 4);
+    pnh_.param("fuse_static_obstacles", fuse_static_obstacles_, false);
     pnh_.param("obstacle_ground_search_radius_m",
                obstacle_ground_search_radius_m_, 0.30);
     pnh_.param("obstacle_min_relative_height_m",
@@ -192,42 +193,44 @@ class TerrainMapBuilder {
     // Patchwork++ nonground is an independent obstacle observation. Fuse it
     // after slope denoising so a valid obstacle cannot be downgraded as an
     // isolated steep cell. Relative height rejects ceilings and high returns.
-    const int obstacle_search_radius = std::max(
-        1, static_cast<int>(std::ceil(
-               obstacle_ground_search_radius_m_ / map_.resolution)));
     std::size_t accepted_obstacle_points = 0;
     std::size_t obstacle_cells = 0;
-    std::vector<uint8_t> obstacle_mask(count, 0);
-    for (const auto& point : obstacles) {
-      if (!std::isfinite(point.x) || !std::isfinite(point.y) ||
-          !std::isfinite(point.z)) continue;
-      const int id = cell(point.x, point.y);
-      if (id < 0) continue;
-      const int mx = id % static_cast<int>(map_.width);
-      const int my = id / static_cast<int>(map_.width);
-      std::vector<float> nearby_ground;
-      for (int dy = -obstacle_search_radius; dy <= obstacle_search_radius; ++dy) {
-        for (int dx = -obstacle_search_radius; dx <= obstacle_search_radius; ++dx) {
-          if (dx * dx + dy * dy > obstacle_search_radius * obstacle_search_radius)
-            continue;
-          const int nx = mx + dx;
-          const int ny = my + dy;
-          if (nx < 0 || ny < 0 || nx >= static_cast<int>(map_.width) ||
-              ny >= static_cast<int>(map_.height)) continue;
-          const float z = map_.elevation[map_.index(nx, ny)];
-          if (std::isfinite(z)) nearby_ground.push_back(z);
+    if (fuse_static_obstacles_) {
+      const int obstacle_search_radius = std::max(
+          1, static_cast<int>(std::ceil(
+                 obstacle_ground_search_radius_m_ / map_.resolution)));
+      std::vector<uint8_t> obstacle_mask(count, 0);
+      for (const auto& point : obstacles) {
+        if (!std::isfinite(point.x) || !std::isfinite(point.y) ||
+            !std::isfinite(point.z)) continue;
+        const int id = cell(point.x, point.y);
+        if (id < 0) continue;
+        const int mx = id % static_cast<int>(map_.width);
+        const int my = id / static_cast<int>(map_.width);
+        std::vector<float> nearby_ground;
+        for (int dy = -obstacle_search_radius; dy <= obstacle_search_radius; ++dy) {
+          for (int dx = -obstacle_search_radius; dx <= obstacle_search_radius; ++dx) {
+            if (dx * dx + dy * dy > obstacle_search_radius * obstacle_search_radius)
+              continue;
+            const int nx = mx + dx;
+            const int ny = my + dy;
+            if (nx < 0 || ny < 0 || nx >= static_cast<int>(map_.width) ||
+                ny >= static_cast<int>(map_.height)) continue;
+            const float z = map_.elevation[map_.index(nx, ny)];
+            if (std::isfinite(z)) nearby_ground.push_back(z);
+          }
         }
+        if (nearby_ground.empty()) continue;
+        const double relative_height = point.z - median(nearby_ground);
+        if (relative_height < obstacle_min_relative_height_m_ ||
+            relative_height > obstacle_max_relative_height_m_) continue;
+        ++accepted_obstacle_points;
+        if (!obstacle_mask[id]) {
+          obstacle_mask[id] = 1;
+          ++obstacle_cells;
+        }
+        map_.cost[id] = kLethal;
       }
-      if (nearby_ground.empty()) continue;
-      const double relative_height = point.z - median(nearby_ground);
-      if (relative_height < obstacle_min_relative_height_m_ ||
-          relative_height > obstacle_max_relative_height_m_) continue;
-      ++accepted_obstacle_points;
-      if (!obstacle_mask[id]) {
-        obstacle_mask[id] = 1;
-        ++obstacle_cells;
-      }
-      map_.cost[id] = kLethal;
     }
 
     wt::saveTerrainMap(map_, output_yaml_);
@@ -237,8 +240,9 @@ class TerrainMapBuilder {
     ROS_INFO("Saved 2.5D map %ux%u @ %.3fm: known=%zu lethal=%zu -> %s",
              map_.width, map_.height, map_.resolution, known, lethal,
              output_yaml_.c_str());
-    ROS_INFO("2.5D obstacle fusion: accepted=%zu/%zu points, cells=%zu, "
+    ROS_INFO("2.5D static-obstacle fusion %s: accepted=%zu/%zu points, cells=%zu, "
              "relative_height=%.2f..%.2fm",
+             fuse_static_obstacles_ ? "enabled" : "disabled",
              accepted_obstacle_points, obstacles.size(), obstacle_cells,
              obstacle_min_relative_height_m_, obstacle_max_relative_height_m_);
   }
@@ -326,6 +330,7 @@ class TerrainMapBuilder {
   double max_slope_deg_ = 25.0;
   int max_slope_cost_ = 80;
   int min_lethal_neighbors_ = 4;
+  bool fuse_static_obstacles_ = false;
   double obstacle_ground_search_radius_m_ = 0.30;
   double obstacle_min_relative_height_m_ = 0.08;
   double obstacle_max_relative_height_m_ = 1.50;
