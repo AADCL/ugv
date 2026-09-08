@@ -78,11 +78,11 @@ TebLocalPlannerROS:
   include_costmap_obstacles: true
 
   # polygon footprint 已经包含 0.50 m x 0.40 m 真实车体尺寸。
-  # 600 mm 门洞每侧约 100 mm 物理余量，保留 80 mm 规划净空。
-  min_obstacle_dist: 0.08
+  # 窄门模式保留 40 mm 额外净空，减少后轮擦碰；通过 600 mm 门洞时低速人工监护。
+  min_obstacle_dist: 0.04
 
   # Match the soft TEB penalty to the costmap's conservative inflation field.
-  inflation_dist: 0.20
+  inflation_dist: 0.15
 
   costmap_obstacles_behind_robot_dist: 1.0
   obstacle_poses_affected: 20

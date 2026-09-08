@@ -22,8 +22,8 @@ terrain_slope_layer:
   unknown_as_lethal: false
 
 inflation_layer:
-  # The radius must exceed the 0.20 m inscribed radius of the chassis.
-  # 0.22 m equals the padded half-width of the 0.40 m chassis. This keeps
-  # the footprint protected while allowing a correctly mapped 0.60 m doorway.
-  inflation_radius: 0.22
+  # Global planning is intentionally permissive so narrow mapped doorways stay
+  # connected. The local costmap and polygon-footprint TEB check remain the
+  # collision-safety authority near the robot.
+  inflation_radius: 0.15
   cost_scaling_factor: 3.0

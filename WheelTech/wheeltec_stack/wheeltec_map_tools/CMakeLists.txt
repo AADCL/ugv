@@ -64,6 +64,17 @@ target_link_libraries(
   ${PCL_LIBRARIES}
 )
 
+add_executable(
+  terrain_reclassify_node
+  src/terrain_reclassify.cpp
+)
+
+target_link_libraries(
+  terrain_reclassify_node
+  ${catkin_LIBRARIES}
+  ${PCL_LIBRARIES}
+)
+
 catkin_install_python(
   PROGRAMS
     scripts/finalize_map.py

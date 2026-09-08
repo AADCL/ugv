@@ -8,8 +8,8 @@ footprint:
   - [-0.250, -0.200]
   - [-0.250,  0.200]
 
-# 600 mm doorway leaves 100 mm per side around the measured 400 mm chassis.
-# Reserve 20 mm for body modelling error; TEB supplies the remaining clearance.
-footprint_padding: 0.02
+# Use the measured chassis envelope directly. Narrow-passage clearance is
+# enforced by TEB, while the global costmap is kept topologically connected.
+footprint_padding: 0.00
 
 transform_tolerance: 0.5

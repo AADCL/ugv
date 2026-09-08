@@ -15,10 +15,10 @@ plugins:
 obstacle_layer:
   enabled: true
   footprint_clearing_enabled: true
-  observation_sources: elevation_marking elevation_clearing
+  observation_sources: live_marking live_clearing
 
-  elevation_marking:
-    topic: /terrain/elevation_obstacle_points
+  live_marking:
+    topic: /terrain/obstacle_points
     sensor_frame: terrain_sensor
     data_type: PointCloud2
     marking: true
@@ -27,11 +27,12 @@ obstacle_layer:
     max_obstacle_height: 1.50
     obstacle_range: 4.0
     raytrace_range: 5.0
-    observation_persistence: 0.20
+    # Ten-hertz live sensing does not need historical point persistence.
+    observation_persistence: 0.0
     expected_update_rate: 0.20
 
-  elevation_clearing:
-    topic: /terrain/elevation_clearing_points
+  live_clearing:
+    topic: /terrain/clearing_points
     sensor_frame: terrain_sensor
     data_type: PointCloud2
     marking: false
@@ -40,10 +41,11 @@ obstacle_layer:
     max_obstacle_height: 2.00
     obstacle_range: 4.0
     raytrace_range: 5.0
-    observation_persistence: 0.20
+    observation_persistence: 0.0
     expected_update_rate: 0.20
 
 inflation_layer:
-  # Match the padded 0.22 m half-width used by the global costmap.
+  # Keep a conservative local envelope; live sensing remains the final
+  # collision check even though global planning uses a narrower corridor.
   inflation_radius: 0.22
   cost_scaling_factor: 3.0
