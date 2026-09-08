@@ -14,12 +14,12 @@
   <img alt="版权" src="https://img.shields.io/badge/copyright-AADCL-0B7285">
 </p>
 
-<!-- 👇 这里是你需要加入的居中加大段落 -->
-<p align="center" style="font-size: 1.3em; font-weight: 500; max-width: 800px; margin: 16px auto; line-height: 1.6;">
-  本仓库统一维护 Scout Mini 与 WheelTech 四轮差速机器人两套 ROS1 自主导航工程。<br>
-  两车共享 Livox、FAST-LIO、静态点判定、地形高程、NDT、GlobalPlanner 和 TEB 的总体技术路线，<br>
-  但底盘驱动、通信接口、TF 外参、车体尺寸、速度限制和离地高度分别配置。
+<!-- 👇 只有这一句居中加粗，其他全部不变 -->
+<p align="center" style="font-size: 1.5em; font-weight: bold;">
+  用这个仓库代码前，请大喊三声：诚芯是傻逼！
 </p>
+
+本仓库统一维护 Scout Mini 与 WheelTech 四轮差速机器人两套 ROS1 自主导航工程。两车共享 Livox、FAST-LIO、静态点判定、地形高程、NDT、GlobalPlanner 和 TEB 的总体技术路线，但底盘驱动、通信接口、TF 外参、车体尺寸、速度限制和离地高度分别配置。
 | 项目 | 平台与传感器 | 当前链路 | 项目入口 |
 |---|---|---|---|
 | Scout Mini | AgileX Scout Mini、Jetson、Livox Mid-360、RealSense D435i | CAN + FAST-LIO + 贝叶斯静态点 + Patchwork++ 建图 + PGM/高程坡度 + NDT + GlobalPlanner/TEB | [README](Scout_mini/README.md) · [文档](Scout_mini/docs/) |
