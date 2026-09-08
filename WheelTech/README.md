@@ -1,4 +1,18 @@
-# 轮趣四轮差速机器人 V5.1：Livox Mid-360 + FAST-LIO2
+<p align="center">
+  <img src="../assets/aadcl_logo.png" alt="AADCL" width="96">
+</p>
+
+<h1 align="center">轮趣四轮差速机器人</h1>
+
+<p align="center">Livox Mid-360 · FAST-LIO2 · 2.5D 地形感知 · GlobalPlanner/TEB</p>
+<p align="center">
+  <img alt="版本" src="https://img.shields.io/badge/version-5.1-1677ff">
+  <img alt="ROS" src="https://img.shields.io/badge/ROS-Noetic-22314E">
+  <img alt="Ubuntu" src="https://img.shields.io/badge/Ubuntu-20.04-E95420">
+  <img alt="平台" src="https://img.shields.io/badge/platform-Jetson%20NX-76B900">
+  <img alt="雷达" src="https://img.shields.io/badge/LiDAR-Livox%20Mid--360-00A6A6">
+  <img alt="版权" src="https://img.shields.io/badge/copyright-AADCL-0B7285">
+</p>
 
 本目录保存轮趣四轮差速底盘在 Jetson NX、ROS Noetic 环境下的建图、定位和导航适配代码及中文文档。软件数据流尽量与 Scout 版本保持一致，但底盘驱动、车体尺寸、外参和运动限制均使用轮趣实车参数。
 

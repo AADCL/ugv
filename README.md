@@ -1,4 +1,17 @@
-# AADCL UGV
+<p align="center">
+  <img src="assets/aadcl_logo.png" alt="AADCL" width="96">
+</p>
+
+<h1 align="center">AADCL UGV</h1>
+
+<p align="center">Scout Mini · WheelTech · ROS1 自主建图、定位与导航</p>
+<p align="center">
+  <img alt="WheelTech 版本" src="https://img.shields.io/badge/WheelTech-5.1-1677ff">
+  <img alt="ROS" src="https://img.shields.io/badge/ROS-Noetic-22314E">
+  <img alt="Ubuntu" src="https://img.shields.io/badge/Ubuntu-20.04-E95420">
+  <img alt="语言" src="https://img.shields.io/badge/C%2B%2B%20%7C%20Python-ROS1-3776AB">
+  <img alt="版权" src="https://img.shields.io/badge/copyright-AADCL-0B7285">
+</p>
 
 本仓库统一维护 Scout Mini 与 WheelTech 四轮差速机器人两套 ROS1 自主导航工程。两车共享 Livox、FAST-LIO、静态点判定、地形高程、NDT、GlobalPlanner 和 TEB 的总体技术路线，但底盘驱动、通信接口、TF 外参、车体尺寸、速度限制和离地高度分别配置。
 
