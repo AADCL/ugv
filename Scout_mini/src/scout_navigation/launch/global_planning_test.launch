@@ -4,6 +4,24 @@
   <arg name="nav_map_yaml" default="$(arg map_dir)/map_raw.yaml" />
   <arg name="terrain_map_yaml" default="$(arg map_dir)/terrain_2p5d.yaml" />
 
+  <node pkg="scout_system_bringup" type="map_bundle_guard.py"
+        name="scout_planning_test_map_bundle_guard" output="screen" required="true">
+    <param name="map_dir" value="$(arg map_dir)" />
+    <param name="check_period" value="1.0" />
+    <rosparam param="required_files" subst_value="true">
+      - "$(arg map_dir)/map_metadata.yaml"
+      - "$(arg nav_map_yaml)"
+      - "$(arg map_dir)/map_raw.pgm"
+      - "$(arg terrain_map_yaml)"
+      - "$(arg map_dir)/terrain_2p5d_elevation.f32"
+      - "$(arg map_dir)/terrain_2p5d_slope_deg.f32"
+      - "$(arg map_dir)/terrain_2p5d_roughness.f32"
+      - "$(arg map_dir)/terrain_2p5d_step_height.f32"
+      - "$(arg map_dir)/terrain_2p5d_cost.u8"
+      - "$(arg map_dir)/terrain_2p5d_confidence.u8"
+    </rosparam>
+  </node>
+
   <node pkg="map_server" type="map_server" name="scout_navigation_map_server"
         args="$(arg nav_map_yaml)" output="screen">
     <remap from="map" to="/nav_static_map" />

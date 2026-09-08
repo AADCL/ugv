@@ -168,6 +168,9 @@ GlobalPlanner -> TEB -> /cmd_vel
 | `/laserMapping` | M/L | Livox 点云与 IMU | `/Odometry`、注册点云、FAST-LIO TF；导航期间由L入口继续运行 |
 | Scout base 节点 | M/L/N | CAN、`/cmd_vel` | `/scout/odom` |
 | `/scout_pointcloud_mapper` | M | 注册点云、`/Odometry`、`/fastlio_odom` | 静态扫描、静态PCD、轨迹PCD |
+| `/scout_localization_map_bundle_guard` | L | 地图目录、完成/容量标志 | 定位地图无效时以非零状态退出并联动关闭定位launch |
+| `/scout_navigation_map_bundle_guard` | N | 地图目录、PGM与六层2.5D文件 | 导航地图无效时以非零状态退出并联动关闭导航launch |
+| `/scout_planning_test_map_bundle_guard` | N测试 | 地图目录、PGM与六层2.5D文件 | 全局规划测试使用的同类安全门 |
 | `/scout_terrain_cloud_adapter` | N | 实时body点云 | `/cloud_registered_terrain` |
 | `/scout_navigation_patchworkpp` | N | 重力对齐当前帧 | ground/nonground |
 | `/scout_navigation_terrain_guard` | N | 当前帧分类点 | obstacle/clearing与状态 |
@@ -266,6 +269,7 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 | guard无参考绝对下限 | `terrain_sensor z=-0.42 m` | 雷达离地0.48 m，约6 cm障碍保守兜底 |
 | 离线网格硬限制 | `100 m / 2,000,000 cells` | 远端XY离群点触发明确失败，避免Jetson OOM |
 | mapper容量硬限制 | `2,000,000 / 5,000,000 voxels` | 超限写`.capacity_limited`并拒绝正式finalize |
+| 地图收尾事务标志 | `.finalization_incomplete` | finalize开始时原子写入，完整校验通过后才删除；定位/导航守卫持续拒绝该目录 |
 | mapper恢复检查点 | `120 s` | 同步磁盘保存；正式结束仍以会话脚本显式保存为准 |
 | 全图调试发布 | `2 s（仅有订阅者时）` | 无RViz订阅时不遍历/序列化整张精细点云 |
 | 失效精细体素清理 | `10 s` | 与全图发布解耦，候选generation过期后仍回收内存 |
@@ -328,6 +332,7 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 | Patchwork++ 接入 | `scout_terrain_filter/launch/scout_terrain_filter.launch` |
 | 分类点累积 | `scout_terrain_filter/src/terrain_map_accumulator_node.cpp` |
 | 地图最终生成 | `scout_map_tools/scripts/finalize_map.py` |
+| 地图交付/启动守卫 | `scout_system_bringup/scripts/map_bundle_guard.py` |
 | 离线地面重建 | `scout_map_tools/src/terrain_reclassify.cpp`、`config/terrain_reclassify.yaml` |
 | 旧分类静态门 | `scout_map_tools/src/pcd_static_gate.cpp`，只供兼容模式 |
 | PGM 生成 | `scout_map_tools/src/pcd_to_pgm.cpp` |
@@ -354,6 +359,7 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 | 人员残影明显 | 12次/2秒/60%晋升、8次/0.75秒清除 | 人离开并复扫后整代逐步清除 |
 | PGM 障碍缺失 | 离线重建PCD、0.08 m阈值 | 先确认目标高于Scout可跨越阈值 |
 | finalize拒绝capacity-limited | `.capacity_limited`及mapper日志 | 不得删标志交付；提高容量并重新建图 |
+| 定位/导航launch立刻整体退出 | `.finalization_incomplete`、`.capacity_limited`、缺失/空文件及guard fatal日志 | 地图正在收尾或上次收尾失败；修复首个错误并重新运行finalize，不得手删标志绕过 |
 | 全屋不可通行 | `terrain_2p5d` confidence、PGM unknown | 坡度层不能把未知变自由，也不应覆盖全图为 lethal |
 | 定位启动无 map TF | NDT 初值和 PCD | 收敛后才发布 `map -> odom` |
 | 导航一开定位消失 | `roslaunch --nodes` | 导航入口不应包含 NDT/FAST-LIO/底盘 |

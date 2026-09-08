@@ -15,7 +15,8 @@ Scout Mini 项目运行于 Ubuntu 20.04 / ROS Noetic，硬件包括 AgileX Scout
 - 新增`scout_mapping_session.py`单命令会话入口，在Ctrl+C后先保持零速并显式保存，再停launch、自动生成和校验全部地图资产；
 - 当前帧感知最小水平半径为0.12 m（只在正前方约对应车头边界），无参考低障碍保守兜底，地面平面拟合失败时不允许清空costmap；
 - 离线和当前帧最大可通行坡度统一为22度，并为mapper与离线稠密网格增加Jetson容量硬门；
-- 按已确认需求将PGM建图膨胀设为0.15 m，已正常工作的move_base/TEB参数保持不变。
+- 按已确认需求将PGM建图膨胀设为0.15 m，已正常工作的move_base/TEB参数保持不变；
+- finalize全过程由`.finalization_incomplete`标志保护，定位和导航入口常驻地图guard，拒绝未完成、截断或缺文件的地图包。
 
 ## 当前功能
 
@@ -104,6 +105,7 @@ roslaunch scout_navigation navigation_teb.launch map_name:=factory_a
 ```
 
 `navigation_teb.launch` 不包含 Livox、FAST-LIO、NDT 或底盘节点，因此不会抢占或重启已经运行的重定位链。
+两个运行入口启动时由guard检查地图事务/容量标志和各自需要的文件；guard报错会让对应launch整体停止，必须重新成功执行地图收尾，不能手工删除标志绕过。
 
 ## 关键参数
 
@@ -131,5 +133,6 @@ roslaunch scout_navigation navigation_teb.launch map_name:=factory_a
 - 每条 TF 边只能有一个发布者，`map -> odom` 只由 NDT 发布；
 - 底盘保持 `pub_tf=false`；
 - 正式导航使用 `/scout/odom` 速度反馈；
+- `.finalization_incomplete`或`filtered_camera_init.pcd.capacity_limited`存在时，禁止定位、导航和地图交付；
 - 不向 Git 提交私钥、密码、Token、地图、PCD、rosbag、日志、`build/` 或 `devel/`；
 - 仓库版本需要在 Scout 实车编译通过后再启动建图或导航。

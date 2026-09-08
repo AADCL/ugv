@@ -83,13 +83,26 @@ rostopic echo -n 1 /scout/dynamic_points   # 仅手动打开调试发布时
 ```text
 /home/nvidia/livox_fastlio/maps/factory_a/
 ├── filtered_camera_init.pcd
+├── raw_camera_init.pcd
 ├── traversed_path_map.pcd
 ├── public_map.pcd
+├── terrain_ground_candidates_map.pcd
+├── terrain_ground_map.pcd
+├── terrain_obstacles_map.pcd
 ├── map_raw.pgm / map_raw.yaml
 ├── map.pgm / map.yaml
-├── terrain_2p5d.yaml + 六层.f32/.u8
+├── terrain_cost.pgm / terrain_cost.yaml
+├── terrain_2p5d.yaml
+├── terrain_2p5d_elevation.f32
+├── terrain_2p5d_slope_deg.f32
+├── terrain_2p5d_roughness.f32
+├── terrain_2p5d_step_height.f32
+├── terrain_2p5d_cost.u8
+├── terrain_2p5d_confidence.u8
 └── map_metadata.yaml
 ```
+
+若地图目录中仍存在 `.finalization_incomplete`，表示该次收尾未完整成功；即使目录中已有部分PCD、PGM或高程文件，这张地图也不可用于重定位、导航或交付。先根据会话终端的首个错误排查，重新完成自动收尾或手动`finalize_map.py`，并确认该标志已消失。
 
 日常不需要手动调用保存服务或finalize命令。
 
@@ -111,6 +124,7 @@ ls -lh "$MAP_DIR"
 正常目录包含：
 
 ```text
+filtered_camera_init.pcd
 raw_camera_init.pcd
 traversed_path_map.pcd
 public_map.pcd
@@ -129,6 +143,9 @@ terrain_2p5d_cost.u8
 terrain_2p5d_confidence.u8
 map_metadata.yaml
 ```
+
+检查完整文件清单的同时，还必须确认目录中不存在
+`.finalization_incomplete`；存在该标志时，不能通过复制、改名或手工删除标志的方式将地图强行交付。
 
 `map_raw.yaml`是正式导航静态占据图；`map.yaml`用于定位入口显示兼容。二者都按已确认的建图参数预先膨胀`0.15 m`。车体轨迹只在0.30 m半宽的真实扫掠走廊中补充自由证据，障碍始终覆盖自由证据。
 

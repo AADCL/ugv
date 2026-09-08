@@ -6,6 +6,24 @@
   <arg name="odom_topic" default="/scout/odom" />
   <arg name="cmd_vel_topic" default="/cmd_vel" />
 
+  <node pkg="scout_system_bringup" type="map_bundle_guard.py"
+        name="scout_navigation_map_bundle_guard" output="screen" required="true">
+    <param name="map_dir" value="$(arg map_dir)" />
+    <param name="check_period" value="1.0" />
+    <rosparam param="required_files" subst_value="true">
+      - "$(arg map_dir)/map_metadata.yaml"
+      - "$(arg nav_map_yaml)"
+      - "$(arg map_dir)/map_raw.pgm"
+      - "$(arg terrain_map_yaml)"
+      - "$(arg map_dir)/terrain_2p5d_elevation.f32"
+      - "$(arg map_dir)/terrain_2p5d_slope_deg.f32"
+      - "$(arg map_dir)/terrain_2p5d_roughness.f32"
+      - "$(arg map_dir)/terrain_2p5d_step_height.f32"
+      - "$(arg map_dir)/terrain_2p5d_cost.u8"
+      - "$(arg map_dir)/terrain_2p5d_confidence.u8"
+    </rosparam>
+  </node>
+
   <!--
     Navigation-only layer. Start scout_localization.launch first with the
     same map_name. Livox, FAST-LIO, NDT and the CAN chassis are deliberately

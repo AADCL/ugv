@@ -34,7 +34,7 @@
 导航：PGM静态占据 + 保存坡度代价 + 当前帧局部地面/障碍分割 -> GlobalPlanner + TEB -> 底盘
 ```
 
-两车都只保留一个底层建图链；Scout另提供单命令会话入口，在Ctrl+C后按“零速、显式保存、停launch、自动finalize、检查产物”完成交付。重定位入口独立持续运行，导航launch不重启传感器、FAST-LIO、NDT或底盘。PGM用于静态占据与未知区，高程图只提供保存坡度代价；两车V5.1局部障碍都由当前帧Patchwork++与Terrain Guard判断，不再查询保存高程。
+两车都只保留一个底层建图链；Scout另提供单命令会话入口，在Ctrl+C后按“零速、显式保存、停launch、自动finalize、检查产物”完成交付，并用事务标志与常驻guard拒绝半成品或容量截断地图。重定位入口独立持续运行，导航launch不重启传感器、FAST-LIO、NDT或底盘。PGM用于静态占据与未知区，高程图只提供保存坡度代价；两车V5.1局部障碍都由当前帧Patchwork++与Terrain Guard判断，不再查询保存高程。
 
 仓库保存项目适配层、必要底盘源码和文档，不重复镜像 FAST-LIO、Livox 驱动/SDK、Patchwork++ 或相机驱动等上游仓库。安装、固定版本、编译、启动与测试步骤以各项目文档为准。
 

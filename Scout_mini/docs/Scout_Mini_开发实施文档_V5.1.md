@@ -166,7 +166,7 @@ sensor_height: 0.48
 rosrun scout_system_bringup scout_mapping_session.py factory_a
 ```
 
-该脚本启动上述底层launch；用户停车、释放遥控/teleop并按一次`Ctrl+C`后，脚本以20 Hz持续发布零速，显式调用mapper保存服务，确认成功后停止launch，最后调用`finalize_map.py --replace-raw`并检查关键文件。不能把finalize节点直接塞进普通XML launch的shutdown回调，因为roslaunch会并发终止mapper和后处理节点，存在PCD尚未落盘就读取的竞态。新增脚本后必须同步修改`scout_system_bringup/CMakeLists.txt`与`package.xml`，声明`rospy`、`geometry_msgs`、`std_srvs`和`roslaunch`运行依赖。
+该脚本启动上述底层launch；用户停车、释放遥控/teleop并按一次`Ctrl+C`后，脚本以20 Hz持续发布零速，显式调用mapper保存服务，确认成功后停止launch，最后调用`finalize_map.py --replace-raw`并校验全部PCD、三套PGM/YAML、元数据及六层2.5D文件的尺寸和引用。不能把finalize节点直接塞进普通XML launch的shutdown回调，因为roslaunch会并发终止mapper和后处理节点，存在PCD尚未落盘就读取的竞态。新增脚本后必须同步修改`scout_system_bringup/CMakeLists.txt`与`package.xml`，声明`rospy`、`geometry_msgs`、`std_srvs`、`python3-yaml`和`roslaunch`运行依赖。
 
 ## 7. 可逆贝叶斯地图与轨迹证据
 
@@ -208,13 +208,15 @@ rosrun scout_map_tools finalize_map.py factory_a --replace-raw
 
 脚本顺序如下：
 
-1. 归档或核对`raw_camera_init.pcd`和`traversed_path_map.pcd`；
-2. 使用`scout_geometry.yaml`生成`public_map.pcd`；
-3. `terrain_reclassify_node`从最终贝叶斯PCD提取保守PMF种子；
-4. 以二维支持、平面内点率、RMSE、坡度和连接连续性执行鲁棒局部平面生长；
-5. 仅在原点云附近有XY观测时拟合稠密地面，并按相对地面0.08～1.50 m重建障碍；
-6. PGM把0.30 m半宽的真实车体轨迹作为自由证据，障碍证据优先；
-7. 生成`map_raw.*`、`map.*`、分类PCD、`terrain_2p5d.yaml`六层文件和`map_metadata.yaml`。
+1. 在地图目录原子创建`.finalization_incomplete`，让正在运行或随后启动的定位/导航安全退出；
+2. 归档或核对`raw_camera_init.pcd`和`traversed_path_map.pcd`；
+3. 使用`scout_geometry.yaml`生成`public_map.pcd`；
+4. `terrain_reclassify_node`从最终贝叶斯PCD提取保守PMF种子；
+5. 以二维支持、平面内点率、RMSE、坡度和连接连续性执行鲁棒局部平面生长；
+6. 仅在原点云附近有XY观测时拟合稠密地面，并按相对地面0.08～1.50 m重建障碍；
+7. PGM把0.30 m半宽的真实车体轨迹作为自由证据，障碍证据优先；
+8. 生成并校验`map_raw.*`、`map.*`、`terrain_cost.*`、分类PCD、`terrain_2p5d.yaml`六层文件和`map_metadata.yaml`；
+9. 只有全部校验通过才原子删除`.finalization_incomplete`；任一中间命令、文件头、尺寸或YAML引用失败都保留该标志。
 
 若不希望替换已归档raw，可省略`--replace-raw`，脚本只接受内容完全相同的输入。mapper一旦触发体素容量硬限制，会保存恢复PCD和`.capacity_limited`标志并让保存服务失败；finalize默认拒绝该截断地图。`--allow-capacity-limited`仅用于开发抢救，不能交付。
 
@@ -253,11 +255,12 @@ fuse_static_obstacles: false
 
 ## 10. 定位与导航入口必须分离
 
-`scout_system_bringup/launch/scout_localization.launch` 启动 Livox、FAST-LIO、TF、NDT、地图显示和 Scout 底盘，并持续运行。
+`scout_system_bringup/launch/scout_localization.launch` 包含常驻`scout_localization_map_bundle_guard`，并启动 Livox、FAST-LIO、TF、NDT、地图显示和 Scout 底盘持续运行。ROS launch中的进程近乎并发启动；守卫发现收尾未完成、容量截断或必要文件缺失时立即非零退出，节点配置为`required=true`，因此整套定位入口会一起停止，不能继续使用旧的混合产物。
 
 `scout_navigation/launch/navigation_teb.launch` 只启动：
 
 ```text
+scout_navigation_map_bundle_guard
 scout_terrain_cloud_adapter
 scout_navigation_patchworkpp
 scout_navigation_terrain_guard
@@ -266,7 +269,7 @@ scout_terrain_map_server
 move_base
 ```
 
-导航入口不得出现第二个Livox、`laserMapping`、NDT localizer或底盘驱动。这里的Patchwork++/terrain_guard只处理当前帧局部碰撞，不发布TF，不会抢占重定位节点。
+导航入口不得出现第二个Livox、`laserMapping`、NDT localizer或底盘驱动。定位、导航和规划测试三个guard使用不同ROS节点名，避免同时运行时互相踢掉并触发`required`级联停机。这里的Patchwork++/terrain_guard只处理当前帧局部碰撞，不发布TF，不会抢占重定位节点。
 
 ## 11. 导航参数
 
@@ -302,7 +305,7 @@ inflation_dist: 0.10
 | `ugv_sdk`、`scout_ros/{scout_base,scout_bringup,scout_msgs}` | Scout上游底盘包、CAN | 仓库对应整包；`scout_mapping.launch`与`scout_localization.launch`传入`/scout/odom`和`pub_tf=false` | `ugv_sdk scout_msgs scout_base scout_bringup` | `bringup_can2usb.bash`后检查`candump can0`、`/scout/odom`、`/scout_status` | 无CAN帧时停在底盘层；不允许用底盘TF替代FAST-LIO链 |
 | `Livox-SDK2`、`livox_ros_driver2` | 上游固定版本 | 驱动整包及Mid-360连接配置；项目入口只include `msg_MID360.launch` | 按上游安装SDK，再编译`livox_ros_driver2` | 检查`/livox/lidar`、`/livox/imu`频率和时间戳 | 无原始点云时不排查mapper、NDT或导航 |
 | `FAST_LIO` | 上游算法+Scout配置 | `config/mid360.yaml`、项目内`fastlio_mapping_scout.launch`与`fastlio_local_odom.launch`；关闭`pcd_save_en`，开启body点云 | `fast_lio`实际包名对应目标 | 检查`/Odometry`、`/cloud_registered`、`/cloud_registered_body`和`camera_init -> body` | 不接收预处理点云；姿态/时间异常先在前端解决 |
-| `scout_tf_manager`、`scout_system_bringup` | 项目自有 | `config/extrinsics.yaml`、`config/scout_geometry.yaml`、`scripts/{tf_manager,geometry_tf_publisher}.py`及三个正式入口launch | `scout_tf_manager scout_system_bringup` | 用`tf_monitor`核对每条边只有一个发布者 | 重复`map->odom`或`odom->camera_init`时禁止继续导航 |
+| `scout_tf_manager`、`scout_system_bringup` | 项目自有 | `config/extrinsics.yaml`、`config/scout_geometry.yaml`、`scripts/{tf_manager,geometry_tf_publisher}.py`、`scripts/{scout_mapping_session,map_bundle_guard}.py`及三个正式入口launch；CMake安装两脚本，package声明其运行依赖 | `scout_tf_manager scout_system_bringup` | 用`tf_monitor`核对每条边只有一个发布者；用无效地图验证guard让launch退出 | 重复TF或地图事务/容量标志存在时禁止继续导航 |
 | `scout_pose_adapter`、`scout_cloud_adapter` | 项目自有 | 两整包；前者输出`/fastlio_odom`，后者按launch目标frame变换点云 | `scout_pose_adapter scout_cloud_adapter` | 检查消息frame和TF时间，不只看话题是否存在 | 转换失败不得通过新增静态TF掩盖 |
 | `scout_pointcloud_mapper` | 项目自有C++ | `src/pointcloud_mapper_node.cpp`、`config/mapper.yaml`、`launch/pointcloud_mapper.launch`、CMake/package | `pointcloud_mapper_node` | 建图入口下检查`/scout/static_scan`及私有save/reset服务；退出后检查两份PCD | 候选约2秒未输出正常；长期为空再查frame、里程计时差和门限 |
 | `scout_terrain_filter`、`patchworkpp` | 项目适配+上游算法 | `patchworkpp_scout.yaml`、`terrain_guard_scout.yaml`、两个launch、guard/accumulator源码 | `terrain_guard_node terrain_map_accumulator_node`及`patchworkpp` | 正式导航检查ground/nonground、obstacle/clearing和`/terrain/status` | 建图默认无这些话题；仅导航或诊断模式要求存在 |
@@ -357,7 +360,7 @@ roslaunch --nodes scout_system_bringup scout_localization.launch map_name:=check
 roslaunch --nodes scout_navigation navigation_teb.launch map_name:=check_map
 ```
 
-第三条必须包含`scout_navigation_patchworkpp`、`scout_navigation_terrain_guard`、两个地图服务器节点和`move_base`，不能列出Livox、FAST-LIO、NDT或Scout底盘。
+第二、三条应分别包含唯一命名的定位/导航地图guard。第三条还必须包含`scout_navigation_patchworkpp`、`scout_navigation_terrain_guard`、两个地图服务器节点和`move_base`，不能列出Livox、FAST-LIO、NDT或Scout底盘。
 
 ## 14. 实车验证流程
 
@@ -385,6 +388,8 @@ test -s "$MAP_DIR/map_raw.yaml"
 test -s "$MAP_DIR/terrain_2p5d.yaml"
 test -s "$MAP_DIR/terrain_ground_map.pcd"
 test -s "$MAP_DIR/terrain_obstacles_map.pcd"
+test ! -e "$MAP_DIR/.finalization_incomplete"
+test ! -e "$MAP_DIR/filtered_camera_init.pcd.capacity_limited"
 ```
 
 ### 14.3 重定位
@@ -428,11 +433,13 @@ rosparam get /move_base/recovery_behaviors
 - [ ] 操作员使用`scout_mapping_session.py NAME`，一次Ctrl+C后按保存、停机、finalize顺序完成。
 - [ ] mapper保存`filtered_camera_init.pcd`与`traversed_path_map.pcd`。
 - [ ] mapper体素容量超限时保存服务和finalize均明确拒绝正式交付。
+- [ ] finalize执行期间/失败后保留`.finalization_incomplete`，只有全套资产校验通过才删除。
 - [ ] 静态晋升满足12次、2秒和60%命中率；撤销满足8次自由射线与0.75秒。
 - [ ] FAST-LIO 不读取任何过滤后点云。
 - [ ] `map -> odom` 只有 NDT 一个发布者。
 - [ ] Scout 底盘 `pub_tf=false`，速度反馈使用 `/scout/odom`。
 - [ ] 定位入口持续运行，导航入口不重启 Livox、FAST-LIO、NDT 或底盘。
+- [ ] 定位、导航和规划测试入口各有唯一命名的常驻地图guard，残缺或容量截断地图会使对应launch整体退出。
 - [ ] GlobalPlanner + TEB 为唯一正式规划组合，没有 DWA。
 - [ ] 全局、局部 costmap 和 TEB 软膨胀均为 `0.10 m`。
 - [ ] Scout footprint、速度限制和刚体外参未被 WheelTech 参数覆盖。

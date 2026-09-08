@@ -8,6 +8,19 @@
 
 	<arg name="map_yaml" default="$(arg map_dir)/map.yaml" />
 
+	<!-- Reject a partial or actively-finalizing bundle before localization uses it. -->
+	<node pkg="scout_system_bringup" type="map_bundle_guard.py"
+		  name="scout_localization_map_bundle_guard" output="screen" required="true">
+		<param name="map_dir" value="$(arg map_dir)" />
+		<param name="check_period" value="1.0" />
+		<rosparam param="required_files" subst_value="true">
+			- "$(arg map_dir)/map_metadata.yaml"
+			- "$(arg map_pcd)"
+			- "$(arg map_yaml)"
+			- "$(arg map_dir)/map.pgm"
+		</rosparam>
+	</node>
+
 	<!-- 1. Mid-360 -->
 	<include file="$(find livox_ros_driver2)/launch_ROS1/msg_MID360.launch" />
 

@@ -7,7 +7,7 @@
 | 项目 | 当前值 |
 |---|---|
 | GitHub 网页 | `https://github.com/AADCL/ugv` |
-| SSH 远程 | `git@github.com:AADCL/ugv.git` |
+| SSH 远程（`origin`） | `git@github-aadcl-ugv:AADCL/ugv.git` |
 | 分支 | `main` |
 | Scout Git 克隆 | `/home/nvidia/github_upload/ugv` |
 | Scout 子目录 | `Scout_mini/` |
@@ -45,6 +45,18 @@ Host github-aadcl-ugv
 ```bash
 ssh -T github-aadcl-ugv
 ```
+
+已有克隆必须让 `origin` 使用同一个 Host 别名，否则 Git 会绕过上面的
+`github-aadcl-ugv` 配置，重新连接默认的 `github.com:22`：
+
+```bash
+cd /home/nvidia/github_upload/ugv
+git remote set-url origin git@github-aadcl-ugv:AADCL/ugv.git
+git remote -v
+```
+
+`git remote -v` 的 fetch 和 push 地址都应显示
+`git@github-aadcl-ugv:AADCL/ugv.git`。
 
 认证成功只表示账户密钥有效，仓库写权限仍由 AADCL 组织和仓库成员权限决定。
 

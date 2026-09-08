@@ -20,6 +20,196 @@ from std_srvs.srv import Trigger
 MAP_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
 
+def pcd_header(path, allow_empty=False):
+    """Validate a generated PCD header without loading its point payload."""
+    fields = {}
+    payload_offset = None
+    with path.open("rb") as stream:
+        for _ in range(128):
+            raw_line = stream.readline(65536)
+            if not raw_line:
+                break
+            try:
+                line = raw_line.decode("ascii").strip()
+            except UnicodeDecodeError as error:
+                raise RuntimeError("invalid PCD header encoding: {}".format(path)) from error
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split()
+            fields[parts[0].upper()] = parts[1:]
+            if parts[0].upper() == "DATA":
+                payload_offset = stream.tell()
+                break
+    required = {
+        "VERSION", "FIELDS", "SIZE", "TYPE", "COUNT", "WIDTH", "HEIGHT",
+        "POINTS", "DATA",
+    }
+    missing = sorted(required.difference(fields))
+    if missing:
+        raise RuntimeError(
+            "invalid PCD header {}: missing {}".format(path, ", ".join(missing))
+        )
+    try:
+        points = int(fields["POINTS"][0])
+        width = int(fields["WIDTH"][0])
+        height = int(fields["HEIGHT"][0])
+    except (IndexError, ValueError) as error:
+        raise RuntimeError("invalid PCD dimensions: {}".format(path)) from error
+    if points < 0 or width < 0 or height <= 0 or points != width * height:
+        raise RuntimeError("inconsistent PCD dimensions: {}".format(path))
+    if not allow_empty and points == 0:
+        raise RuntimeError("PCD contains no points: {}".format(path))
+    if not fields["DATA"] or fields["DATA"][0].lower() not in (
+            "ascii", "binary", "binary_compressed"):
+        raise RuntimeError("unsupported PCD DATA encoding: {}".format(path))
+    encoding = fields["DATA"][0].lower()
+    try:
+        sizes = [int(value) for value in fields["SIZE"]]
+        counts = [int(value) for value in fields["COUNT"]]
+    except ValueError as error:
+        raise RuntimeError("invalid PCD SIZE/COUNT values: {}".format(path)) from error
+    field_count = len(fields["FIELDS"])
+    if (field_count == 0 or len(sizes) != field_count or
+            len(fields["TYPE"]) != field_count or len(counts) != field_count or
+            any(size <= 0 for size in sizes) or any(count <= 0 for count in counts)):
+        raise RuntimeError("inconsistent PCD field metadata: {}".format(path))
+    if encoding == "binary":
+        expected_size = payload_offset + points * sum(
+            size * count for size, count in zip(sizes, counts)
+        )
+        if path.stat().st_size != expected_size:
+            raise RuntimeError(
+                "PCD binary payload size mismatch: expected {} bytes: {}".format(
+                    expected_size, path
+                )
+            )
+    elif points > 0 and path.stat().st_size <= payload_offset:
+        raise RuntimeError("PCD payload is missing: {}".format(path))
+    return points
+
+
+def validate_pgm(path):
+    with path.open("rb") as stream:
+        tokens = []
+        while len(tokens) < 4:
+            line = stream.readline(65536)
+            if not line:
+                break
+            tokens.extend(line.split(b"#", 1)[0].split())
+        payload_offset = stream.tell()
+    try:
+        magic = tokens[0]
+        width = int(tokens[1])
+        height = int(tokens[2])
+        maximum = int(tokens[3])
+    except (IndexError, ValueError) as error:
+        raise RuntimeError("invalid PGM header: {}".format(path)) from error
+    if magic != b"P5" or width <= 0 or height <= 0 or maximum != 255:
+        raise RuntimeError("invalid PGM dimensions or encoding: {}".format(path))
+    expected_size = payload_offset + width * height
+    if path.stat().st_size != expected_size:
+        raise RuntimeError(
+            "PGM payload size mismatch: expected {} bytes: {}".format(
+                expected_size, path
+            )
+        )
+
+
+def validate_map_yaml(map_dir, yaml_name):
+    yaml_path = map_dir / yaml_name
+    with yaml_path.open("r", encoding="utf-8") as stream:
+        config = yaml.safe_load(stream) or {}
+    image = config.get("image")
+    if not isinstance(image, str) or not image:
+        raise RuntimeError("map YAML does not name an image: {}".format(yaml_path))
+    image_path = (map_dir / image).resolve()
+    if image_path.parent != map_dir.resolve():
+        raise RuntimeError("map YAML image escapes map directory: {}".format(yaml_path))
+    if not image_path.is_file() or image_path.stat().st_size == 0:
+        raise RuntimeError("map image is missing or empty: {}".format(image_path))
+    validate_pgm(image_path)
+
+
+def validate_terrain_layers(map_dir):
+    terrain_yaml = map_dir / "terrain_2p5d.yaml"
+    with terrain_yaml.open("r", encoding="utf-8") as stream:
+        terrain_index = yaml.safe_load(stream) or {}
+    if terrain_index.get("format") != "scout_terrain_2p5d":
+        raise RuntimeError("terrain_2p5d.yaml has an unsupported format")
+    try:
+        width = int(terrain_index["width"])
+        height = int(terrain_index["height"])
+        resolution = float(terrain_index["resolution"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise RuntimeError("terrain_2p5d.yaml has invalid dimensions") from error
+    if width <= 0 or height <= 0 or resolution <= 0.0:
+        raise RuntimeError("terrain_2p5d.yaml has invalid dimensions")
+    layers = terrain_index.get("layers")
+    expected = {
+        "elevation": 4,
+        "slope_deg": 4,
+        "roughness": 4,
+        "step_height": 4,
+        "cost": 1,
+        "confidence": 1,
+    }
+    if not isinstance(layers, dict) or set(layers) != set(expected):
+        raise RuntimeError("terrain_2p5d.yaml does not index all six layers")
+    map_root = map_dir.resolve()
+    for layer_name, bytes_per_cell in expected.items():
+        layer_path = (map_dir / str(layers[layer_name])).resolve()
+        if layer_path.parent != map_root:
+            raise RuntimeError(
+                "terrain layer {} escapes the map directory".format(layer_name)
+            )
+        expected_size = width * height * bytes_per_cell
+        if not layer_path.is_file() or layer_path.stat().st_size != expected_size:
+            raise RuntimeError(
+                "terrain layer {} size mismatch: expected {} bytes, got {}".format(
+                    layer_name,
+                    expected_size,
+                    layer_path.stat().st_size if layer_path.is_file() else "missing",
+                )
+            )
+
+
+def validate_finalized_bundle(map_dir, map_name):
+    for marker_name in (
+            ".finalization_incomplete",
+            "filtered_camera_init.pcd.capacity_limited"):
+        if (map_dir / marker_name).exists():
+            raise RuntimeError("map bundle is not deliverable: {}".format(
+                map_dir / marker_name
+            ))
+
+    for name in (
+            "filtered_camera_init.pcd",
+            "raw_camera_init.pcd",
+            "traversed_path_map.pcd",
+            "public_map.pcd"):
+        pcd_header(map_dir / name)
+    # A valid scene can have no classified obstacle points. Require complete
+    # PCD headers but do not reject a zero-point classified output.
+    for name in (
+            "terrain_ground_candidates_map.pcd",
+            "terrain_ground_map.pcd",
+            "terrain_obstacles_map.pcd"):
+        pcd_header(map_dir / name, allow_empty=True)
+    for yaml_name in ("map_raw.yaml", "map.yaml", "terrain_cost.yaml"):
+        validate_map_yaml(map_dir, yaml_name)
+    validate_terrain_layers(map_dir)
+
+    metadata_path = map_dir / "map_metadata.yaml"
+    with metadata_path.open("r", encoding="utf-8") as stream:
+        metadata = yaml.safe_load(stream) or {}
+    if metadata.get("map_name") != map_name:
+        raise RuntimeError(
+            "map_metadata.yaml belongs to {!r}, expected {!r}".format(
+                metadata.get("map_name"), map_name
+            )
+        )
+
+
 def stop_process_group(process):
     """Stop roslaunch cleanly, escalating only after bounded waits."""
     if process.poll() is not None:
@@ -56,51 +246,7 @@ def finalize(map_name):
         )
 
     map_dir = Path.home() / "livox_fastlio" / "maps" / map_name
-    required = (
-        "raw_camera_init.pcd",
-        "traversed_path_map.pcd",
-        "public_map.pcd",
-        "map_raw.pgm",
-        "map_raw.yaml",
-        "map.pgm",
-        "map.yaml",
-        "terrain_2p5d.yaml",
-        "map_metadata.yaml",
-    )
-    missing = [
-        name
-        for name in required
-        if not (map_dir / name).is_file()
-        or (map_dir / name).stat().st_size == 0
-    ]
-    if missing:
-        raise RuntimeError(
-            "finalizer returned success but required outputs are missing: "
-            + ", ".join(missing)
-        )
-    terrain_yaml = map_dir / "terrain_2p5d.yaml"
-    with terrain_yaml.open("r", encoding="utf-8") as stream:
-        terrain_index = yaml.safe_load(stream) or {}
-    if terrain_index.get("format") != "scout_terrain_2p5d":
-        raise RuntimeError("terrain_2p5d.yaml has an unsupported format")
-    layers = terrain_index.get("layers")
-    if not isinstance(layers, dict) or set(layers) != {
-            "elevation", "slope_deg", "roughness", "step_height", "cost",
-            "confidence"}:
-        raise RuntimeError("terrain_2p5d.yaml does not index all six layers")
-    map_root = map_dir.resolve()
-    for layer_name, relative_path in layers.items():
-        layer_path = (map_dir / str(relative_path)).resolve()
-        if layer_path.parent != map_root:
-            raise RuntimeError(
-                "terrain layer {} escapes the map directory".format(layer_name)
-            )
-        if not layer_path.is_file() or layer_path.stat().st_size == 0:
-            raise RuntimeError(
-                "terrain layer {} is missing or empty: {}".format(
-                    layer_name, layer_path
-                )
-            )
+    validate_finalized_bundle(map_dir, map_name)
     print("[DONE] finalized map: {}".format(map_dir))
 
 
