@@ -1,5 +1,7 @@
 # AADCL UGV
+<div style="text-align: center; font-size: 28px; font-weight: bold;">
 用这个仓库代码前，请大喊三声：诚芯是傻逼！
+</div>
 本仓库统一维护 Scout Mini 与 WheelTech 四轮差速机器人两套 ROS1 自主导航工程。两车共享 Livox、FAST-LIO、静态点判定、地形高程、NDT、GlobalPlanner 和 TEB 的总体技术路线，但底盘驱动、通信接口、TF 外参、车体尺寸、速度限制和离地高度分别配置。
 
 | 项目 | 平台与传感器 | 当前链路 | 项目入口 |
