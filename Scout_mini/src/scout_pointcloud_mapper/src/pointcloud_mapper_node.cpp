@@ -576,6 +576,9 @@ class PointcloudMapper {
     }
 
     bool capacity_prune_attempted = false;
+    bool capacity_prune_allowed =
+        last_map_prune_.isZero() ||
+        (msg->header.stamp - last_map_prune_).toSec() >= map_prune_period_;
     for (const Point& point : filtered->points) {
       const VoxelKey key = voxelKey(point, temporal_voxel_size_);
       if (dynamic_filter_enable_) {
@@ -604,9 +607,11 @@ class PointcloudMapper {
       auto map_it = map_voxels_.find(map_key);
       if (map_it == map_voxels_.end()) {
         if (map_voxels_.size() >= max_map_voxels_ &&
-            !capacity_prune_attempted) {
+            !capacity_prune_attempted && capacity_prune_allowed) {
           pruneInvalidMapVoxels();
           capacity_prune_attempted = true;
+          capacity_prune_allowed = false;
+          last_map_prune_ = msg->header.stamp;
         }
         if (map_voxels_.size() >= max_map_voxels_) {
           ++map_capacity_dropped_points_;
@@ -734,8 +739,7 @@ class PointcloudMapper {
         temporal_voxels_.size() > max_voxels_;
     const bool map_prune_due =
         last_map_prune_.isZero() ||
-        (now - last_map_prune_).toSec() >= map_prune_period_ ||
-        map_voxels_.size() >= (max_map_voxels_ * 9U) / 10U;
+        (now - last_map_prune_).toSec() >= map_prune_period_;
     if (!temporal_cleanup_due && !map_prune_due) {
       return;
     }
