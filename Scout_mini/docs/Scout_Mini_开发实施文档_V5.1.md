@@ -38,7 +38,7 @@ map_raw 静态占据 -------------------------------+
 - 正式导航使用 GlobalPlanner + TEB。DWA 和旧 TerrainGlobalPlanner 不进入当前代码树。
 - Patchwork++在正式导航阶段对当前帧直接分类；保存高程只提供全局坡度软代价，不再参与局部障碍判定。
 - 建图期Patchwork++累积仅作为`enable_online_terrain_diagnostics:=true`的回归诊断支路，默认关闭以降低Jetson负载。
-- `StartEscapeRecovery`只有在全局起点占用、局部倒车走廊安全且后向点云覆盖新鲜时才发布低速倒车。
+- `StartEscapeRecovery`已安装但默认关闭；完成实车静态覆盖验证后，才可在全局起点确定为致命占据、局部倒车走廊安全且后向点云覆盖新鲜时启用低速倒车。
 - 本版本目标为平地、连续坡道以及平地与坡道组合路段；不承诺楼梯语义或跨层地图。
 
 ## 2. 目录与包职责
@@ -157,6 +157,8 @@ sensor_height: 0.48
 ```
 
 默认参数`enable_online_terrain_diagnostics=false`。正式交付不依赖在线分类PCD；贝叶斯静态点判定需要累计观测，启动后最初约2秒`/scout/static_scan`尚未稳定属于正常现象。
+
+历史入口`scout_system.launch`保留为兼容别名，但其内部只能include`scout_mapping.launch`并透传`map_name`和诊断开关，不能再直接include上游`mapping_mid360.launch`。这样旧操作命令也不会绕过mapper、pose adapter或统一TF链。
 
 ## 7. 可逆贝叶斯地图与轨迹证据
 
@@ -278,7 +280,7 @@ inflation_dist: 0.10
 
 `costmap_common.yaml` 的 polygon footprint 和 `footprint_padding: 0.03` 未改。TEB `min_obstacle_dist: 0.15` 也未改，它是轨迹净空，不是 costmap 障碍膨胀。
 
-`move_base_slope_teb.yaml`新增`StartEscapeRecovery`。逃逸速度0.05 m/s、目标0.30 m；后向覆盖区按雷达前置0.25 m换算为`terrain_sensor`坐标X=-1.05～-0.55 m、半宽0.36 m。没有至少20个新鲜后向点、局部costmap走廊不安全或全局起点本来就是自由时，插件拒绝倒车并发布停止命令。TEB自身`max_vel_x_backwards=0`保持原值，普通规划不主动倒车。
+`move_base_slope_teb.yaml`安装并配置了`StartEscapeRecovery`，但`recovery_behavior_enabled=false`保持Scout现有导航行为不变。完成现场静态覆盖验收后才能手动启用。启用时逃逸速度0.05 m/s、目标0.30 m；后向覆盖区按雷达前置0.25 m换算为`terrain_sensor`坐标X=-1.05～-0.55 m、半宽0.36 m。覆盖还必须满足至少20个新鲜点、X跨度0.20 m且左右各至少5点；全局起点不是明确致命碰撞（未知区和图外均拒绝）、局部走廊不安全或1.5秒内位移不足0.02 m时，插件拒绝/停止倒车。TEB自身`max_vel_x_backwards=0`保持原值。
 
 ### 11.1 功能包逐包复现索引
 
@@ -305,7 +307,7 @@ inflation_dist: 0.10
 roslaunch scout_navigation nav_logging.launch tag:=factory_a_baseline
 ```
 
-它在`~/livox_fastlio/logs/navigation/`创建带时间戳目录，保存launch/config/rosparam/节点话题快照、分卷LZ4 bag，并调用`analyze_nav_bag.py`输出CSV和摘要。日志只观察系统，不启动或重启导航；地图、bag和日志都禁止提交Git。
+它在`~/livox_fastlio/logs/navigation/`创建带时间戳目录，保存launch/config/rosparam/节点话题快照、分卷LZ4 bag，并调用`analyze_nav_bag.py`输出CSV和摘要。默认只记录Terrain Guard障碍点和状态，不重复录制body、terrain、ground、nonground与近似全量clearing点云，以免拖慢Jetson。日志只观察系统，不启动或重启导航；地图、bag和日志都禁止提交Git。
 
 ## 12. 编译顺序
 
@@ -426,7 +428,7 @@ rosparam get /move_base/recovery_behaviors
 - [ ] `base_link_height_above_ground=0.28 m`，离线地面种子不误用0.20 m刚性偏移。
 - [ ] 轮胎总高 `0.15 m`，正式相对障碍阈值为 `0.08 m`。
 - [ ] 导航局部costmap订阅`/terrain/obstacle_points`和`/terrain/clearing_points`，不再订阅elevation前缀旧话题。
-- [ ] StartEscapeRecovery无后向新鲜覆盖时必须拒绝倒车。
+- [ ] `recovery_behavior_enabled=false`保持默认；启用前验证未知区、图外和后向覆盖不足均拒绝倒车。
 - [ ] 实车移动测试前先完成Patchwork++平地输出、TF和后向覆盖检查。
 
 ## 16. Git 同步

@@ -490,9 +490,13 @@ class TerrainReclassifier {
         Cell& cell = cells_[index(x, y)];
         if (!cell.trusted_seed) continue;
         ++distributed_seed_cells_;
+        // A PMF label is only a conservative seed proposal. It must still pass
+        // the same local two-dimensional plane validation before it may become
+        // connected support for surface fitting or region growth.
+        if (!cell.valid_candidate) continue;
         if (cell.connected) continue;
         cell.connected = true;
-        if (cell.valid_candidate) queue.push_back(index(x, y));
+        queue.push_back(index(x, y));
       }
     }
     if (origin_seed_cells_ == 0) {

@@ -9,34 +9,41 @@
 | GitHub 网页 | `https://github.com/AADCL/ugv` |
 | SSH 远程 | `git@github.com:AADCL/ugv.git` |
 | 分支 | `main` |
-| NX Git 克隆 | `/home/nrc19/github_upload/ugv_scout_wheeltech` |
+| Scout Git 克隆 | `/home/nvidia/github_upload/ugv` |
 | Scout 子目录 | `Scout_mini/` |
 | Git 用户名 | `BAIOLED` |
 | Git 邮箱 | `114551361+BAIOLED@users.noreply.github.com` |
 
-组织策略已停用 Deploy Key，因此使用已添加到 AADCL 组织账户的专用 SSH 账户密钥。当前 NX 密钥路径为：
+组织策略已停用 Deploy Key，因此使用已添加到 AADCL 组织账户的专用 SSH 账户密钥。当前 Scout 主机密钥路径为：
 
 ```text
-/home/nrc19/.ssh/id_ed25519_github_aadcl_account
+/home/nvidia/.ssh/id_ed25519_github_aadcl_ugv
 ```
 
 本文不保存公钥正文或指纹。密钥权限：
 
 ```bash
-chmod 700 /home/nrc19/.ssh
-chmod 600 /home/nrc19/.ssh/id_ed25519_github_aadcl_account
+chmod 700 /home/nvidia/.ssh
+chmod 600 /home/nvidia/.ssh/id_ed25519_github_aadcl_ugv
 ```
 
 ## 2. GitHub SSH 443
 
 当前网络使用 `ssh.github.com:443`：
 
+```sshconfig
+Host github-aadcl-ugv
+  HostName ssh.github.com
+  Port 443
+  User git
+  IdentityFile ~/.ssh/id_ed25519_github_aadcl_ugv
+  IdentitiesOnly yes
+```
+
+对应连通检查：
+
 ```bash
-ssh -T -p 443 \
-  -i /home/nrc19/.ssh/id_ed25519_github_aadcl_account \
-  -o IdentitiesOnly=yes \
-  -o Hostname=ssh.github.com \
-  git@github.com
+ssh -T github-aadcl-ugv
 ```
 
 认证成功只表示账户密钥有效，仓库写权限仍由 AADCL 组织和仓库成员权限决定。
@@ -44,7 +51,7 @@ ssh -T -p 443 \
 ## 3. 提交前检查
 
 ```bash
-cd /home/nrc19/github_upload/ugv_scout_wheeltech
+cd /home/nvidia/github_upload/ugv
 git remote -v
 git branch --show-current
 git status --short
@@ -68,8 +75,7 @@ git diff --cached --stat
 ```bash
 git commit -m "Update Scout terrain mapping and navigation flow"
 
-GIT_SSH_COMMAND="ssh -p 443 -i /home/nrc19/.ssh/id_ed25519_github_aadcl_account -o IdentitiesOnly=yes -o Hostname=ssh.github.com" \
-  git push origin main
+git push origin main
 ```
 
 推送后验证：
@@ -78,15 +84,14 @@ GIT_SSH_COMMAND="ssh -p 443 -i /home/nrc19/.ssh/id_ed25519_github_aadcl_account 
 git status --short
 git rev-parse HEAD
 
-GIT_SSH_COMMAND="ssh -p 443 -i /home/nrc19/.ssh/id_ed25519_github_aadcl_account -o IdentitiesOnly=yes -o Hostname=ssh.github.com" \
-  git ls-remote origin refs/heads/main
+git ls-remote origin refs/heads/main
 ```
 
 本地 HEAD 与远端 `refs/heads/main` 应一致。
 
 ## 5. 禁止上传
 
-- `/home/nrc19/.ssh/` 中的任何私钥；
+- `/home/nvidia/.ssh/` 中的任何私钥；
 - 密码、Token、Cookie、`.env` 和认证 URL；
 - `build/`、`devel/`、`logs/`、`*.pyc`；
 - `*.pcd`、`*.bag`、PGM/YAML 地图运行产物和传感器数据；

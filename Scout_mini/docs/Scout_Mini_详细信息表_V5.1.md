@@ -76,6 +76,7 @@ Scout 底盘 launch 必须设置 `pub_tf=false`。同一 TF 边出现两个发�
 | 模式 | 命令 | 是否包含底盘 | 说明 |
 |---|---|---:|---|
 | 建图 | `roslaunch scout_system_bringup scout_mapping.launch map_name:=NAME` | 是 | 唯一入口，默认保存贝叶斯静态PCD与车体轨迹 |
+| 建图兼容别名 | `roslaunch scout_system_bringup scout_system.launch map_name:=NAME` | 是 | 只include上述V5.1入口，不再保留旧FAST-LIO直连链 |
 | 地图最终生成 | `rosrun scout_map_tools finalize_map.py NAME` | 否 | 一次生成 PCD、PGM、2.5D 高程坡度资产 |
 | 重定位 | `roslaunch scout_system_bringup scout_localization.launch map_name:=NAME` | 是 | Livox、FAST-LIO、NDT、TF、底盘，持续运行 |
 | 正式导航层 | `roslaunch scout_navigation navigation_teb.launch map_name:=NAME` | 否 | 必须复用同名地图的定位入口 |
@@ -180,7 +181,7 @@ GlobalPlanner -> TEB -> /cmd_vel
 | `/scout_navigation_map_server` | N | `map_raw.yaml` | `/nav_static_map` |
 | `/scout_terrain_map_server` | N | `terrain_2p5d.yaml` | 高程、坡度、代价话题 |
 | `/move_base` | N | 静态图、坡度、局部障碍、TF | 路径和 `/cmd_vel` |
-| `StartEscapeRecovery` | N | 全局/局部costmap、后向点云 | 仅安全条件满足时低速倒车 |
+| `StartEscapeRecovery` | N可选 | 全局/局部costmap、后向点云 | 已安装但默认关闭；实车验证后方可启用 |
 | RealSense 节点 | C | D435i USB | RGB、深度、CameraInfo、TF |
 
 ## 9. 关键话题
@@ -256,16 +257,17 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 
 | 参数 | 当前值 | 说明 |
 |---|---:|---|
-| global inflation radius | `0.10 m` | 本次修改 |
-| local inflation radius | `0.10 m` | 本次修改 |
+| global inflation radius | `0.10 m` | 保留Scout已验证基线 |
+| local inflation radius | `0.10 m` | 保留Scout已验证基线 |
 | cost scaling factor | `5.0` | 全局/局部相同 |
-| TEB inflation distance | `0.10 m` | 本次修改，软代价 |
+| TEB inflation distance | `0.10 m` | 保留Scout已验证基线，软代价 |
 | TEB min obstacle distance | `0.15 m` | 保留 Scout 原值 |
 | footprint padding | `0.03 m` | 保留 Scout 原值 |
 | local costmap | `6 x 6 m`、`0.05 m/cell` | odom 滚动窗口 |
 | local observation | marking=`/terrain/obstacle_points`；clearing=`/terrain/clearing_points` | persistence=0 |
-| start escape | `0.05 m/s`、`0.30 m` | 仅安全门通过后运行 |
-| rear coverage box | X=`-1.05~-0.55 m`、半宽`0.36 m` | terrain_sensor坐标，需20点/0.25 s |
+| start escape | `0.05 m/s`、`0.30 m` | 默认关闭；实车验证后才允许启用 |
+| rear coverage box | X=`-1.05~-0.55 m`、半宽`0.36 m` | terrain_sensor坐标；需20点、X跨度0.20 m、左右各5点、0.25 s内 |
+| escape stall gate | `1.5 s / 0.02 m` | 倒车无进展时提前停止，不等待8 s总时限 |
 
 ### 10.4 Scout TEB 运动参数
 

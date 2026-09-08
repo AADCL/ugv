@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <mutex>
 #include <stdexcept>
 #include <string>
@@ -43,6 +44,8 @@ class StartEscapeRecovery : public nav_core::RecoveryBehavior {
     private_nh.param("control_frequency", control_frequency_, 20.0);
     private_nh.param("max_duration", max_duration_, 8.0);
     private_nh.param("minimum_progress", minimum_progress_, 0.12);
+    private_nh.param("stall_timeout", stall_timeout_, 1.5);
+    private_nh.param("stall_progress", stall_progress_, 0.02);
     private_nh.param<std::string>("cmd_vel_topic", cmd_vel_topic_, "cmd_vel");
     private_nh.param<std::string>("rear_cloud_topic", rear_cloud_topic_,
                                   "/cloud_registered_terrain");
@@ -51,6 +54,8 @@ class StartEscapeRecovery : public nav_core::RecoveryBehavior {
     private_nh.param("rear_max_x", rear_max_x_, -0.55);
     private_nh.param("rear_half_width", rear_half_width_, 0.36);
     private_nh.param("rear_min_points", rear_min_points_, 20);
+    private_nh.param("rear_min_x_span", rear_min_x_span_, 0.20);
+    private_nh.param("rear_min_points_per_side", rear_min_points_per_side_, 5);
     private_nh.param("rear_observation_timeout", rear_observation_timeout_, 0.25);
 
     backward_speed_ = std::max(0.01, std::abs(backward_speed_));
@@ -60,6 +65,8 @@ class StartEscapeRecovery : public nav_core::RecoveryBehavior {
     control_frequency_ = std::max(5.0, control_frequency_);
     max_duration_ = std::max(1.0, max_duration_);
     minimum_progress_ = std::max(0.0, minimum_progress_);
+    stall_timeout_ = std::max(0.5, stall_timeout_);
+    stall_progress_ = std::max(0.005, stall_progress_);
 
     cmd_vel_pub_ = nh_.advertise<geometry_msgs::Twist>(cmd_vel_topic_, 1);
     rear_cloud_sub_ = nh_.subscribe(rear_cloud_topic_, 1,
@@ -85,16 +92,26 @@ class StartEscapeRecovery : public nav_core::RecoveryBehavior {
     }
 
     const double global_yaw = tf2::getYaw(global_pose.pose.orientation);
-    if (footprintSafe(global_costmap_, global_pose.pose.position.x,
-                      global_pose.pose.position.y, global_yaw)) {
+    const double global_cost = footprintCost(
+        global_costmap_, global_pose.pose.position.x,
+        global_pose.pose.position.y, global_yaw);
+    if (global_cost >= 0.0) {
       ROS_WARN("StartEscapeRecovery skipped: the global start footprint is free");
+      stopRobot();
+      return;
+    }
+    // CostmapModel distinguishes lethal collision (-1) from unknown space
+    // (-2) and map-boundary failure (-3). Never turn either uncertainty into
+    // an automatic motion command.
+    if (global_cost != -1.0) {
+      ROS_ERROR("StartEscapeRecovery refused: global footprint is unknown or outside the map");
       stopRobot();
       return;
     }
 
     const double local_yaw = tf2::getYaw(local_pose.pose.orientation);
-    if (!footprintSafe(local_costmap_, local_pose.pose.position.x,
-                       local_pose.pose.position.y, local_yaw)) {
+    if (footprintCost(local_costmap_, local_pose.pose.position.x,
+                      local_pose.pose.position.y, local_yaw) < 0.0) {
       ROS_ERROR("StartEscapeRecovery refused: live local sensing reports a collision");
       stopRobot();
       return;
@@ -113,7 +130,7 @@ class StartEscapeRecovery : public nav_core::RecoveryBehavior {
          distance += sample_step_) {
       const double x = local_pose.pose.position.x - distance * std::cos(local_yaw);
       const double y = local_pose.pose.position.y - distance * std::sin(local_yaw);
-      if (!footprintSafe(local_costmap_, x, y, local_yaw)) {
+      if (footprintCost(local_costmap_, x, y, local_yaw) < 0.0) {
         ROS_ERROR("StartEscapeRecovery refused: reverse corridor blocked at %.2f m",
                   distance);
         stopRobot();
@@ -128,6 +145,8 @@ class StartEscapeRecovery : public nav_core::RecoveryBehavior {
     const ros::WallTime begin = ros::WallTime::now();
     ros::Rate rate(control_frequency_);
     double progress = 0.0;
+    double last_progress = 0.0;
+    ros::WallTime last_progress_time = begin;
     bool blocked = false;
 
     while (ros::ok() && progress < escape_distance_ &&
@@ -148,7 +167,7 @@ class StartEscapeRecovery : public nav_core::RecoveryBehavior {
                              lookahead_distance_ * std::cos(yaw);
       const double check_y = current.pose.position.y -
                              lookahead_distance_ * std::sin(yaw);
-      if (!footprintSafe(local_costmap_, check_x, check_y, yaw)) {
+      if (footprintCost(local_costmap_, check_x, check_y, yaw) < 0.0) {
         ROS_ERROR("StartEscapeRecovery stopped: a live obstacle entered behind");
         blocked = true;
         break;
@@ -157,6 +176,16 @@ class StartEscapeRecovery : public nav_core::RecoveryBehavior {
       const double dx = current.pose.position.x - start_x;
       const double dy = current.pose.position.y - start_y;
       progress = -(dx * std::cos(local_yaw) + dy * std::sin(local_yaw));
+      if (progress >= last_progress + stall_progress_) {
+        last_progress = progress;
+        last_progress_time = ros::WallTime::now();
+      } else if ((ros::WallTime::now() - last_progress_time).toSec() >=
+                 stall_timeout_) {
+        ROS_ERROR("StartEscapeRecovery stopped: chassis made no progress for %.2f s",
+                  stall_timeout_);
+        blocked = true;
+        break;
+      }
 
       geometry_msgs::Twist command;
       command.linear.x = -backward_speed_;
@@ -176,6 +205,10 @@ class StartEscapeRecovery : public nav_core::RecoveryBehavior {
  private:
   void rearCloudCallback(const sensor_msgs::PointCloud2ConstPtr& message) {
     int count = 0;
+    int left_count = 0;
+    int right_count = 0;
+    double min_x = std::numeric_limits<double>::infinity();
+    double max_x = -std::numeric_limits<double>::infinity();
     try {
       sensor_msgs::PointCloud2ConstIterator<float> x(*message, "x");
       sensor_msgs::PointCloud2ConstIterator<float> y(*message, "y");
@@ -183,6 +216,10 @@ class StartEscapeRecovery : public nav_core::RecoveryBehavior {
         if (std::isfinite(*x) && std::isfinite(*y) && *x >= rear_min_x_ &&
             *x <= rear_max_x_ && std::abs(*y) <= rear_half_width_) {
           ++count;
+          min_x = std::min(min_x, static_cast<double>(*x));
+          max_x = std::max(max_x, static_cast<double>(*x));
+          if (*y >= 0.0F) ++left_count;
+          else ++right_count;
         }
       }
     } catch (const std::runtime_error& error) {
@@ -191,6 +228,10 @@ class StartEscapeRecovery : public nav_core::RecoveryBehavior {
     }
     std::lock_guard<std::mutex> lock(rear_mutex_);
     rear_point_count_ = count;
+    rear_distribution_ok_ =
+        count >= rear_min_points_ && max_x - min_x >= rear_min_x_span_ &&
+        left_count >= rear_min_points_per_side_ &&
+        right_count >= rear_min_points_per_side_;
     rear_received_wall_time_ = ros::WallTime::now();
   }
 
@@ -201,13 +242,13 @@ class StartEscapeRecovery : public nav_core::RecoveryBehavior {
     if (rear_received_wall_time_.isZero() || age > rear_observation_timeout_) {
       return false;
     }
-    return rear_point_count_ >= rear_min_points_;
+    return rear_point_count_ >= rear_min_points_ && rear_distribution_ok_;
   }
 
-  bool footprintSafe(costmap_2d::Costmap2DROS* costmap_ros, double x,
-                     double y, double yaw) const {
+  double footprintCost(costmap_2d::Costmap2DROS* costmap_ros, double x,
+                       double y, double yaw) const {
     base_local_planner::CostmapModel model(*costmap_ros->getCostmap());
-    return model.footprintCost(x, y, yaw, costmap_ros->getRobotFootprint()) >= 0.0;
+    return model.footprintCost(x, y, yaw, costmap_ros->getRobotFootprint());
   }
 
   void stopRobot() {
@@ -235,14 +276,19 @@ class StartEscapeRecovery : public nav_core::RecoveryBehavior {
   double control_frequency_ = 20.0;
   double max_duration_ = 8.0;
   double minimum_progress_ = 0.12;
+  double stall_timeout_ = 1.5;
+  double stall_progress_ = 0.02;
   bool require_rear_observation_ = true;
   double rear_min_x_ = -1.05;
   double rear_max_x_ = -0.55;
   double rear_half_width_ = 0.36;
   int rear_min_points_ = 20;
+  double rear_min_x_span_ = 0.20;
+  int rear_min_points_per_side_ = 5;
   double rear_observation_timeout_ = 0.25;
   mutable std::mutex rear_mutex_;
   int rear_point_count_ = 0;
+  bool rear_distribution_ok_ = false;
   ros::WallTime rear_received_wall_time_;
 };
 

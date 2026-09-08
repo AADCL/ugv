@@ -10,7 +10,7 @@ Scout Mini 项目运行于 Ubuntu 20.04 / ROS Noetic，硬件包括 AgileX Scout
 - mapper新增`/fastlio_odom`车体中心轨迹保存，PGM只在真实走过的0.30 m半宽走廊中补充自由证据，障碍证据始终优先；
 - 默认建图不再在线累积Patchwork++标签，`finalize_map.py`直接从最终贝叶斯PCD执行PMF种子、鲁棒局部平面生长和相对地面障碍重建；
 - 导航局部障碍改为当前帧Patchwork++与Terrain Guard输出，不再查询保存高程，避免定位修正导致局部障碍漂移；
-- 增加`StartEscapeRecovery`，只有全局起点被占、局部倒车走廊无碰撞且雷达后方覆盖新鲜时才允许0.05 m/s低速逃逸；Scout雷达前置0.25 m，对应后向检查区使用terrain_sensor坐标X=-1.05～-0.55 m；
+- 增加可选`StartEscapeRecovery`，完成实车后向覆盖验证前默认关闭；启用后也只有全局起点确定为致命占据、局部倒车走廊无碰撞且雷达后方覆盖新鲜时才允许0.05 m/s低速逃逸；
 - 新增明确的`base_link_height_above_ground=0.28 m`，离线地面种子不再误用0.20 m刚性雷达Z偏移。
 
 ## 当前功能

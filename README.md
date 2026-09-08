@@ -23,7 +23,7 @@
 本仓库统一维护 Scout Mini 与 WheelTech 四轮差速机器人两套 ROS1 自主导航工程。两车共享 Livox、FAST-LIO、静态点判定、地形高程、NDT、GlobalPlanner 和 TEB 的总体技术路线，但底盘驱动、通信接口、TF 外参、车体尺寸、速度限制和离地高度分别配置。
 | 项目 | 平台与传感器 | 当前链路 | 项目入口 |
 |---|---|---|---|
-| Scout Mini V5.1 | AgileX Scout Mini、Jetson、Livox Mid-360、RealSense D435i | CAN + 可逆贝叶斯静态点 + 轨迹自由证据 + 鲁棒离线地面重建 + NDT + 当前帧地形避障 + 安全逃逸 + GlobalPlanner/TEB | [README](Scout_mini/README.md) · [文档](Scout_mini/docs/) |
+| Scout Mini V5.1 | AgileX Scout Mini、Jetson、Livox Mid-360、RealSense D435i | CAN + 可逆贝叶斯静态点 + 轨迹自由证据 + 鲁棒离线地面重建 + NDT + 当前帧地形避障 + 可选安全逃逸 + GlobalPlanner/TEB | [README](Scout_mini/README.md) · [文档](Scout_mini/docs/) |
 | WheelTech V5.1 | WheelTech 四轮差速底盘、Jetson NX、Livox Mid-360、Orbbec Gemini 336L | 串口底盘 + FAST-LIO + 可逆贝叶斯静态点 + PGM/2.5D + NDT + 实时局部地面分割 + 安全倒退逃逸 + GlobalPlanner/TEB | [README](WheelTech/README.md) · [文档](WheelTech/docs/) |
 
 总体数据流：

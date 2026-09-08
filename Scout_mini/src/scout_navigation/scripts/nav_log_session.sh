@@ -71,12 +71,7 @@ TOPICS=(
   /terrain_2p5d/elevation_cloud
   /terrain_2p5d/traversability_cost
   /terrain_2p5d/slope
-  /cloud_registered_body
-  /cloud_registered_terrain
-  /terrain/patchwork_ground
-  /terrain/patchwork_nonground
   /terrain/obstacle_points
-  /terrain/clearing_points
   /terrain/status
 )
 
@@ -124,7 +119,7 @@ finish_session() {
 trap finish_session INT TERM EXIT
 
 echo "[NAV_LOG] run_dir=${RUN_DIR}"
-echo "[NAV_LOG] 2.5D + current-frame terrain + TEB navigation log enabled"
+echo "[NAV_LOG] lightweight 2.5D + terrain obstacle + TEB log enabled"
 echo "[NAV_LOG] perform the test now; Ctrl+C this launch when finished"
 
 rosbag record --lz4 --split --size=2048 -O "${RUN_DIR}/navigation" "${TOPICS[@]}" &
