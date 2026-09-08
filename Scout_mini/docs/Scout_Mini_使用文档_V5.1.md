@@ -33,14 +33,21 @@ rosrun scout_bringup bringup_can2usb.bash
 ip -details link show can0
 ```
 
-### 2.2 唯一建图入口
+### 2.2 推荐的一键建图会话入口
 
 ```bash
-roslaunch scout_system_bringup scout_mapping.launch \
-  map_name:=factory_a
+rosrun scout_system_bringup scout_mapping_session.py factory_a
 ```
 
-不要再启动另一套2.5D建图launch。默认入口启动：
+这一个命令负责启动完整建图链；路线完成后在同一终端按一次`Ctrl+C`，它会严格按“调用mapper保存服务 -> 停止全部launch节点 -> 运行地图收尾 -> 检查关键产物”的顺序执行。不要再启动另一套2.5D建图launch。
+
+底层运行入口仍是：
+
+```bash
+roslaunch scout_system_bringup scout_mapping.launch map_name:=factory_a
+```
+
+它用于开发调试，不负责在退出后自动收尾。默认建图链启动：
 
 - Livox 与 FAST-LIO；
 - Scout CAN 底盘；
@@ -48,7 +55,7 @@ roslaunch scout_system_bringup scout_mapping.launch \
 - `/fastlio_odom`车体中心轨迹保存；
 - TF和pose adapter。
 
-Patchwork++在线分类默认关闭，最终PGM和2.5D由`finalize_map.py`从同一贝叶斯静态PCD统一重建。启动约2秒后`/scout/static_scan`趋于稳定属于正常现象。
+Patchwork++在线分类默认关闭，最终PGM和2.5D由会话入口调用`finalize_map.py`，从同一贝叶斯静态PCD统一重建。启动约2秒后`/scout/static_scan`趋于稳定属于正常现象。
 
 ### 2.3 建图中检查
 
@@ -67,24 +74,31 @@ rostopic echo -n 1 /scout/dynamic_points   # 仅手动打开调试发布时
 - 坡道和平地连接处要完整覆盖，避免高程图边缘成为未知区；
 - 地图名称不要包含空格或斜杠。
 
-### 2.4 停止与自动保存
+### 2.4 停止、保存与自动收尾
 
-在建图终端按一次`Ctrl+C`，等待静态PCD和轨迹最终保存日志。不要直接断电或`kill -9`。
+在会话终端按一次`Ctrl+C`，直到看到`[DONE] finalized map`再退出SSH或断电。不要对会话或roslaunch执行`kill -9`。脚本先显式调用`/scout_pointcloud_mapper/save_map`，确认成功后才停止建图节点，因此不会让finalize与mapper析构保存互相竞争。
 
-应生成：
+最终应直接生成：
 
 ```text
 /home/nvidia/livox_fastlio/maps/factory_a/
 ├── filtered_camera_init.pcd
-└── traversed_path_map.pcd
+├── traversed_path_map.pcd
+├── public_map.pcd
+├── map_raw.pgm / map_raw.yaml
+├── map.pgm / map.yaml
+├── terrain_2p5d.yaml + 六层.f32/.u8
+└── map_metadata.yaml
 ```
 
-日常不需要手动调用 finish 服务。
+日常不需要手动调用保存服务或finalize命令。
 
-## 3. 一次生成全部地图资产
+## 3. 手动恢复或重新生成地图资产
+
+只有曾用底层`scout_mapping.launch`、自动收尾失败，或需要从已保存PCD重新生成资产时，才手动运行：
 
 ```bash
-rosrun scout_map_tools finalize_map.py factory_a
+rosrun scout_map_tools finalize_map.py factory_a --replace-raw
 ```
 
 随后检查：
@@ -107,22 +121,24 @@ map_raw.pgm / map_raw.yaml
 map.pgm / map.yaml
 terrain_cost.pgm / terrain_cost.yaml
 terrain_2p5d.yaml
-terrain_2p5d_elevation.bin
-terrain_2p5d_confidence.bin
-terrain_2p5d_slope.bin
-terrain_2p5d_traversability.bin
-terrain_2p5d_residual.bin
-terrain_2p5d_obstacle.bin
+terrain_2p5d_elevation.f32
+terrain_2p5d_slope_deg.f32
+terrain_2p5d_roughness.f32
+terrain_2p5d_step_height.f32
+terrain_2p5d_cost.u8
+terrain_2p5d_confidence.u8
 map_metadata.yaml
 ```
 
-`map_raw.yaml`是正式导航静态占据图；`map.yaml`用于定位入口显示兼容。二者不预先膨胀。车体轨迹只在0.30 m半宽的真实扫掠走廊中补充自由证据，障碍始终覆盖自由证据。
+`map_raw.yaml`是正式导航静态占据图；`map.yaml`用于定位入口显示兼容。二者都按已确认的建图参数预先膨胀`0.15 m`。车体轨迹只在0.30 m半宽的真实扫掠走廊中补充自由证据，障碍始终覆盖自由证据。
 
-不要单独移动或删除 `terrain_2p5d.yaml` 配套的 `.bin` 文件。只有明确要替换已经归档的 raw PCD 时才运行：
+不要单独移动或删除 `terrain_2p5d.yaml` 的`layers`字段所列`.f32/.u8`文件。不替换已归档raw、仅核对同一输入时可省略`--replace-raw`：
 
 ```bash
-rosrun scout_map_tools finalize_map.py factory_a --replace-raw
+rosrun scout_map_tools finalize_map.py factory_a
 ```
+
+若出现`filtered_camera_init.pcd.capacity_limited`，说明Jetson内存保护已开始丢弃新体素；工具会拒绝把截断PCD发布为正式地图。不要删除标志强行交付，应提高`mapper.yaml`中的`dynamic_filter/max_voxels`或`map/max_voxels`后重新建图。`--allow-capacity-limited`只用于开发者抢救数据，不能用于正式地图。
 
 ## 4. 重定位
 
@@ -188,19 +204,20 @@ teb_local_planner/TebLocalPlannerROS
 
 V5.1正式话题是`/terrain/obstacle_points`和`/terrain/clearing_points`。在RViz发送`2D Nav Goal`。坡道在全局图中产生连续软代价，局部障碍由当前帧Patchwork++与Terrain Guard判断，不查询保存高程。
 
-## 6. 10 cm 膨胀的含义
+## 6. 建图 15 cm 与导航 10 cm 膨胀的含义
 
+- PGM `obstacle_inflation_m=0.15 m`：在保存地图时从原始障碍边界向外写入占据格；
 - global costmap `inflation_radius=0.10 m`：静态障碍向外扩展的运行距离；
 - local costmap `inflation_radius=0.10 m`：实时障碍向外扩展的运行距离；
 - TEB `inflation_dist=0.10 m`：轨迹优化的软代价范围；
 - footprint：Scout 实际车体 polygon，保持原值；
 - TEB `min_obstacle_dist=0.15 m`：车体边界到障碍的期望净空，保持原值。
 
-footprint 不是障碍膨胀。即使膨胀改小，规划器仍然不能让真实车体轮廓穿过障碍。
+建图0.15 m与全局运行时0.10 m不是覆盖关系：全局静态图上它们会依次作用，离散栅格误差外约形成0.25 m障碍外扩。local costmap的0.10 m只作用于实时障碍。footprint是车体真实轮廓，不是膨胀；TEB净空又是独立约束。本次没有改动已经正常工作的move_base/TEB参数。
 
 ## 7. 雷达与轮胎高度
 
-当前Patchwork++`sensor_height=0.48 m`，对应雷达中心到地面的实测垂直高度。刚性雷达Z偏移是0.20 m，因此`base_link_height_above_ground=0.28 m`。轮胎总高0.15 m，正式地图与在线障碍下限取0.08 m。
+当前Patchwork++`sensor_height=0.48 m`，对应雷达中心到地面的实测垂直高度。刚性雷达Z偏移是0.20 m，因此`base_link_height_above_ground=0.28 m`。轮胎总高0.15 m，正式地图与在线障碍下限取0.08 m。Livox位于`base_link`前方0.25 m，而车头边界为0.37 m，因此当前帧分割最小水平半径取0.12 m：它只在正前方约对应保险杠平面，并不是矩形车体裁剪，侧后方可能包含自身回波。必须在空车静止时检查局部costmap；若有自反射，应增加实测footprint crop，不能继续盲调单一半径。0.10～0.20 m近距回波也必须通过静态障碍测试。
 
 修改文件：
 
@@ -210,7 +227,7 @@ scout_terrain_filter/config/terrain_guard_scout.yaml
 scout_system_bringup/config/scout_geometry.yaml
 ```
 
-不要把`base_link -> body`的`z=0.20 m`直接当成雷达离地高度或base_link离地高度。V5.1 Terrain Guard、PGM、2.5D和导航障碍阈值统一为0.08 m。
+不要把`base_link -> body`的`z=0.20 m`直接当成雷达离地高度或base_link离地高度。V5.1 Terrain Guard、PGM、2.5D和导航障碍阈值统一为0.08 m；保存高程和当前帧Guard的最大可通行坡度统一为22度。无局部地面参考时，Guard以雷达坐标`z=-0.42 m`作为保守低障碍兜底，并禁止未分类点清空costmap。
 
 ## 8. D435i
 
@@ -247,7 +264,7 @@ roslaunch scout_navigation nav_logging.launch \
 | 导航时Patchwork++无输出 | `/cloud_registered_terrain` frame -> `terrain_sensor` TF -> `sensor_height` |
 | 地面大量进 nonground | 先核对雷达绝对离地高度，再核对重力对齐 TF 和姿态 |
 | 人员留下轻微残影 | 人员离开后复扫；检查12次/2秒/60%晋升和8次/0.75秒清除参数 |
-| finalize失败 | `filtered_camera_init.pcd`、轨迹和新工具是否完整；重新编译并source |
+| finalize失败 | `filtered_camera_init.pcd`、轨迹和新工具是否完整；若有`.capacity_limited`先提高容量并重新建图 |
 | 没有 `terrain_2p5d.yaml` | 不要使用 `--legacy-2d-only`；检查 `scout_2p5d_navigation` |
 | 重定位没有 `map` TF | NDT 是否收敛；地图名和 `public_map.pcd` 是否正确 |
 | 启动导航后定位消失 | 当前 launch 不应发生；用 `roslaunch --nodes` 检查是否部署了旧版导航文件 |
@@ -261,5 +278,5 @@ roslaunch scout_navigation nav_logging.launch \
 1. 取消或停止发送导航目标；
 2. 停止 `navigation_teb.launch`；
 3. 停止 `scout_localization.launch`；
-4. 建图模式等待mapper完成静态PCD和轨迹最终保存；
+4. 建图模式等待会话入口显示`[DONE] finalized map`；
 5. 最后关闭 CAN 和整车电源。

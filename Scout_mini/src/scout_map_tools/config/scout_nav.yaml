@@ -1,5 +1,7 @@
 resolution: 0.05
 padding_m: 0.50
+grid/max_extent_m: 100.0
+grid/max_cells: 2000000
 
 floor_min_z: -0.30
 floor_max_z: 0.05
@@ -11,9 +13,9 @@ free_dilation_m: 0.10
 # Only a recorded base_link centre path may open ground-missing cells. Scout
 # Mini half width is about 0.295 m, rounded to a conservative 0.30 m corridor.
 free_evidence_radius_m: 0.30
-# Do not bake inflation into the saved map. The move_base InflationLayer applies
-# runtime inflation, avoiding double inflation at narrow doors.
-obstacle_inflation_m: 0.00
+# User-confirmed mapping inflation. This is baked into the PGM and is separate
+# from the unchanged 0.10 m move_base runtime InflationLayer.
+obstacle_inflation_m: 0.15
 
 classified_obstacle/ground_search_radius_m: 0.30
 classified_ground/height_percentile: 0.20

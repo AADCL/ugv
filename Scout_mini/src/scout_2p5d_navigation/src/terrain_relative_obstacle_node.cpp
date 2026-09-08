@@ -34,7 +34,7 @@ class TerrainRelativeObstacleFilter {
       : nh_(), pnh_("~"), tf_listener_(tf_buffer_) {
     std::string map_yaml;
     pnh_.param<std::string>("terrain_map_yaml", map_yaml, "");
-    pnh_.param("min_range", min_range_, 0.25);
+    pnh_.param("min_range", min_range_, 0.12);
     pnh_.param("max_range", max_range_, 5.0);
     pnh_.param("min_obstacle_relative_height", min_obstacle_height_, 0.08);
     pnh_.param("max_obstacle_relative_height", max_obstacle_height_, 1.50);
@@ -160,7 +160,7 @@ class TerrainRelativeObstacleFilter {
   ros::Publisher obstacle_pub_;
   ros::Publisher clearing_pub_;
   wt::TerrainMap terrain_;
-  double min_range_ = 0.25;
+  double min_range_ = 0.12;
   double max_range_ = 5.0;
   double min_obstacle_height_ = 0.15;
   double max_obstacle_height_ = 1.50;

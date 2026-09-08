@@ -49,6 +49,11 @@ class TerrainMapBuilder {
     pnh_.param<std::string>("frame_id", map_.frame_id, "map");
     pnh_.param("resolution", map_.resolution, 0.10);
     pnh_.param("padding_m", padding_m_, 0.50);
+    pnh_.param("max_extent_m", max_extent_m_, 100.0);
+    int max_grid_cells_param = 2000000;
+    pnh_.param("max_grid_cells", max_grid_cells_param, 2000000);
+    max_grid_cells_ = static_cast<std::size_t>(
+        std::max(1, max_grid_cells_param));
     pnh_.param("min_points_per_cell", min_points_per_cell_, 1);
     pnh_.param("ground_height_percentile", ground_percentile_, 0.20);
     pnh_.param("max_fill_radius_cells", max_fill_radius_, 4);
@@ -56,7 +61,7 @@ class TerrainMapBuilder {
     pnh_.param("fit_radius_m", fit_radius_m_, 0.30);
     pnh_.param("smooth_height_delta_m", smooth_height_delta_, 0.12);
     pnh_.param("preferred_slope_deg", preferred_slope_deg_, 4.0);
-    pnh_.param("max_slope_deg", max_slope_deg_, 25.0);
+    pnh_.param("max_slope_deg", max_slope_deg_, 22.0);
     pnh_.param("max_slope_cost", max_slope_cost_, 80);
     pnh_.param("min_lethal_neighbors", min_lethal_neighbors_, 4);
     pnh_.param("fuse_static_obstacles", fuse_static_obstacles_, false);
@@ -68,7 +73,9 @@ class TerrainMapBuilder {
                obstacle_max_relative_height_m_, 1.50);
     if (ground_path_.empty() || obstacle_path_.empty() || output_yaml_.empty())
       throw std::runtime_error("ground_pcd, obstacle_pcd and output_yaml are required");
-    if (map_.resolution <= 0.0 || max_slope_deg_ <= preferred_slope_deg_)
+    if (map_.resolution <= 0.0 || padding_m_ < 0.0 ||
+        max_extent_m_ < map_.resolution ||
+        max_slope_deg_ <= preferred_slope_deg_)
       throw std::runtime_error("invalid 2.5D map parameters");
     max_slope_cost_ = std::max(1, std::min(200, max_slope_cost_));
     obstacle_ground_search_radius_m_ = std::max(
@@ -112,12 +119,31 @@ class TerrainMapBuilder {
     };
     bounds(ground);
     bounds(obstacles);
+    if (!std::isfinite(min_x) || !std::isfinite(min_y) ||
+        !std::isfinite(max_x) || !std::isfinite(max_y))
+      throw std::runtime_error("terrain PCDs contain no finite XY points");
+    const double extent_x = max_x - min_x + 2.0 * padding_m_;
+    const double extent_y = max_y - min_y + 2.0 * padding_m_;
+    if (extent_x > max_extent_m_ || extent_y > max_extent_m_)
+      throw std::runtime_error(
+          "2.5D extent " + std::to_string(extent_x) + " x " +
+          std::to_string(extent_y) + " m exceeds max_extent_m=" +
+          std::to_string(max_extent_m_));
+    const uint64_t width = std::max<uint64_t>(
+        1U, static_cast<uint64_t>(std::ceil(extent_x / map_.resolution)));
+    const uint64_t height = std::max<uint64_t>(
+        1U, static_cast<uint64_t>(std::ceil(extent_y / map_.resolution)));
+    if (width > std::numeric_limits<uint32_t>::max() ||
+        height > std::numeric_limits<uint32_t>::max() || height == 0U ||
+        width > max_grid_cells_ / height)
+      throw std::runtime_error(
+          "2.5D grid " + std::to_string(width) + " x " +
+          std::to_string(height) + " exceeds max_grid_cells=" +
+          std::to_string(max_grid_cells_));
     map_.origin_x = min_x - padding_m_;
     map_.origin_y = min_y - padding_m_;
-    map_.width = std::max(1, static_cast<int>(std::ceil(
-        (max_x - min_x + 2.0 * padding_m_) / map_.resolution)));
-    map_.height = std::max(1, static_cast<int>(std::ceil(
-        (max_y - min_y + 2.0 * padding_m_) / map_.resolution)));
+    map_.width = static_cast<uint32_t>(width);
+    map_.height = static_cast<uint32_t>(height);
     const std::size_t count = map_.size();
     std::vector<std::vector<float>> samples(count);
     for (const auto& p : ground) {
@@ -320,6 +346,8 @@ class TerrainMapBuilder {
   std::string obstacle_path_;
   std::string output_yaml_;
   double padding_m_ = 0.5;
+  double max_extent_m_ = 100.0;
+  std::size_t max_grid_cells_ = 2000000;
   int min_points_per_cell_ = 1;
   double ground_percentile_ = 0.20;
   int max_fill_radius_ = 4;
@@ -327,7 +355,7 @@ class TerrainMapBuilder {
   double fit_radius_m_ = 0.30;
   double smooth_height_delta_ = 0.12;
   double preferred_slope_deg_ = 4.0;
-  double max_slope_deg_ = 25.0;
+  double max_slope_deg_ = 22.0;
   int max_slope_cost_ = 80;
   int min_lethal_neighbors_ = 4;
   bool fuse_static_obstacles_ = false;

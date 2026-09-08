@@ -75,9 +75,10 @@ Scout 底盘 launch 必须设置 `pub_tf=false`。同一 TF 边出现两个发�
 
 | 模式 | 命令 | 是否包含底盘 | 说明 |
 |---|---|---:|---|
-| 建图 | `roslaunch scout_system_bringup scout_mapping.launch map_name:=NAME` | 是 | 唯一入口，默认保存贝叶斯静态PCD与车体轨迹 |
+| 推荐一键建图会话 | `rosrun scout_system_bringup scout_mapping_session.py NAME` | 是 | 启动、零速停车、显式保存、停launch、finalize及产物检查 |
+| 建图底层launch | `roslaunch scout_system_bringup scout_mapping.launch map_name:=NAME` | 是 | 唯一底层链；仅开发调试，退出后需手动finalize |
 | 建图兼容别名 | `roslaunch scout_system_bringup scout_system.launch map_name:=NAME` | 是 | 只include上述V5.1入口，不再保留旧FAST-LIO直连链 |
-| 地图最终生成 | `rosrun scout_map_tools finalize_map.py NAME` | 否 | 一次生成 PCD、PGM、2.5D 高程坡度资产 |
+| 地图手动恢复 | `rosrun scout_map_tools finalize_map.py NAME --replace-raw` | 否 | 自动收尾失败或重建时生成PCD、PGM、2.5D资产 |
 | 重定位 | `roslaunch scout_system_bringup scout_localization.launch map_name:=NAME` | 是 | Livox、FAST-LIO、NDT、TF、底盘，持续运行 |
 | 正式导航层 | `roslaunch scout_navigation navigation_teb.launch map_name:=NAME` | 否 | 必须复用同名地图的定位入口 |
 | 全局规划测试 | `roslaunch scout_navigation global_planning_test.launch map_name:=NAME` | 否 | 屏蔽实际速度输出 |
@@ -137,7 +138,7 @@ filtered_camera_init.pcd
 | `terrain_cost.yaml` | 2D 诊断图 | 坡度/障碍可视化 |
 | `map_metadata.yaml` | YAML | 外参和地图生成参数快照 |
 
-PGM 不做离线障碍膨胀，避免与 move_base 的运行时膨胀叠加。
+PGM按用户确认预先膨胀`0.15 m`；move_base全局运行时膨胀仍为`0.10 m`，两者依次作用、不是覆盖关系。局部实时障碍只使用local costmap的`0.10 m`运行时膨胀。
 
 ## 7. 导航数据流
 
@@ -190,7 +191,10 @@ GlobalPlanner -> TEB -> /cmd_vel
 |---|---|---|
 | `/livox/lidar` | `livox_ros_driver2/CustomMsg` | Mid-360 点云 |
 | `/livox/imu` | `sensor_msgs/Imu` | Mid-360 IMU |
+| `/tf` | `tf2_msgs/TFMessage` | 动态TF：FAST-LIO与NDT |
+| `/tf_static` | `tf2_msgs/TFMessage` | Scout几何、车体与相机静态TF |
 | `/Odometry` | `nav_msgs/Odometry` | FAST-LIO `camera_init/body` 位姿 |
+| `/fastlio_odom` | `nav_msgs/Odometry` | pose adapter输出的`odom/base_link`位姿与mapper轨迹输入 |
 | `/cloud_registered` | `sensor_msgs/PointCloud2` | `camera_init` 注册点云 |
 | `/cloud_registered_body` | `sensor_msgs/PointCloud2` | FAST-LIO 当前 body 点云 |
 | `/cloud_registered_base` | `sensor_msgs/PointCloud2` | NDT 实时输入 |
@@ -200,21 +204,44 @@ GlobalPlanner -> TEB -> /cmd_vel
 | `/cloud_registered_terrain` | `sensor_msgs/PointCloud2` | 重力对齐地形点云 |
 | `/terrain/patchwork_ground` | `sensor_msgs/PointCloud2` | Patchwork++ 地面分类 |
 | `/terrain/patchwork_nonground` | `sensor_msgs/PointCloud2` | Patchwork++ 非地面分类 |
+| `/terrain/patchwork_input` | `sensor_msgs/PointCloud2` | Patchwork++输入调试副本，是否发布由上游节点实现决定 |
+| `/terrain/ground_points` | `sensor_msgs/PointCloud2` | Terrain Guard安全地面调试，默认不发布数据 |
+| `/terrain/unsafe_ground_points` | `sensor_msgs/PointCloud2` | 不安全地面调试，默认不发布数据 |
+| `/terrain/unknown_points` | `sensor_msgs/PointCloud2` | 未分类点调试，默认不发布数据 |
 | `/terrain/obstacle_points` | `sensor_msgs/PointCloud2` | 当前帧Terrain Guard marking点 |
 | `/terrain/clearing_points` | `sensor_msgs/PointCloud2` | 当前帧raytrace clearing点 |
 | `/terrain/status` | `diagnostic_msgs/DiagnosticArray` | 当前帧地形状态诊断 |
 | `/nav_static_map` | `nav_msgs/OccupancyGrid` | 正式全局静态图 |
+| `/nav_static_map_metadata` | `nav_msgs/MapMetaData` | 正式全局静态图元数据 |
 | `/terrain_2p5d/elevation_cloud` | `sensor_msgs/PointCloud2` | 保存高程点云可视化 |
 | `/terrain_2p5d/slope` | `nav_msgs/OccupancyGrid` | 保存坡度可视化 |
 | `/terrain_2p5d/traversability_cost` | `nav_msgs/OccupancyGrid` | 保存通行代价可视化 |
 | `/map_cloud` | `sensor_msgs/PointCloud2` | NDT使用的静态PCD，latched发布 |
 | `/initialpose` | `geometry_msgs/PoseWithCovarianceStamped` | RViz重定位初值 |
 | `/map_2d` | `nav_msgs/OccupancyGrid` | 定位入口的2D地图显示 |
+| `/map_metadata` | `nav_msgs/MapMetaData` | 定位入口2D地图元数据 |
 | `/scout/odom` | `nav_msgs/Odometry` | 底盘速度反馈 |
 | `/scout_status` | `scout_msgs/ScoutStatus` | 底盘基础状态 |
 | `/BMS_status` | `scout_msgs/ScoutBmsStatus` | BMS原始状态；不保证存在SOC百分比 |
 | `/rs_status` | `scout_msgs/ScoutRsStatus` | 遥控/控制状态 |
 | `/cmd_vel` | `geometry_msgs/Twist` | 底盘控制指令 |
+| `/move_base_simple/goal` | `geometry_msgs/PoseStamped` | RViz `2D Nav Goal`输入 |
+| `/move_base/goal` | `move_base_msgs/MoveBaseActionGoal` | move_base action目标 |
+| `/move_base/cancel` | `actionlib_msgs/GoalID` | move_base action取消 |
+| `/move_base/status` | `actionlib_msgs/GoalStatusArray` | move_base action状态 |
+| `/move_base/feedback` | `move_base_msgs/MoveBaseActionFeedback` | move_base action反馈 |
+| `/move_base/result` | `move_base_msgs/MoveBaseActionResult` | move_base action结果 |
+| `/move_base/GlobalPlanner/plan` | `nav_msgs/Path` | 正式全局路径 |
+| `/move_base/TebLocalPlannerROS/global_plan` | `nav_msgs/Path` | TEB接收/变换后的全局路径 |
+| `/move_base/TebLocalPlannerROS/local_plan` | `nav_msgs/Path` | TEB局部轨迹 |
+| `/move_base/global_costmap/costmap` | `nav_msgs/OccupancyGrid` | 全局融合代价地图 |
+| `/move_base/local_costmap/costmap` | `nav_msgs/OccupancyGrid` | 局部滚动代价地图 |
+| `/camera/color/image_raw` | `sensor_msgs/Image` | D435i彩色图像（相机独立启动时） |
+| `/camera/color/camera_info` | `sensor_msgs/CameraInfo` | D435i彩色内参 |
+| `/camera/depth/image_rect_raw` | `sensor_msgs/Image` | D435i原始校正深度图 |
+| `/camera/depth/camera_info` | `sensor_msgs/CameraInfo` | D435i深度内参 |
+| `/camera/aligned_depth_to_color/image_raw` | `sensor_msgs/Image` | 对齐到彩色的深度图 |
+| `/camera/aligned_depth_to_color/camera_info` | `sensor_msgs/CameraInfo` | 对齐深度对应内参 |
 
 mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_mapper/reset_map`；诊断累积器启用时还提供`/scout_terrain_map_accumulator/save_map`与`reset_map`。`move_base`标准 action、规划服务以及动态参数话题由ROS Navigation插件自动提供，现场应以`rostopic list -v`和`rosservice list`快照为准。
 
@@ -225,7 +252,7 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 | 参数 | 当前值 | 说明 |
 |---|---:|---|
 | `sensor_height` | `0.48 m` | 雷达中心绝对离地实测 |
-| Patchwork 最小/最大距离 | `0.25 / 12.0 m` | 单帧分割范围 |
+| Patchwork 最小/最大水平半径 | `0.12 / 12.0 m` | 仅正前方对应车头边界；侧后方自反射需实测crop |
 | 贝叶斯/精细体素 | `0.20 / 0.05 m` | 动静态权威/输出几何 |
 | 静态晋升 | `12次、2.0 s、命中率0.60` | 三条件同时满足 |
 | 静态撤销 | `8次自由射线、0.75 s` | 整个generation失效 |
@@ -236,6 +263,12 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 | 正式障碍相对高度 | `0.08-1.50 m` | 轮胎直径 0.15 m |
 | guard 障碍下限 | `0.08 m` | 导航当前帧正式阈值 |
 | guard 最大台阶参考 | `0.08 m` | 约轮半径 |
+| guard无参考绝对下限 | `terrain_sensor z=-0.42 m` | 雷达离地0.48 m，约6 cm障碍保守兜底 |
+| 离线网格硬限制 | `100 m / 2,000,000 cells` | 远端XY离群点触发明确失败，避免Jetson OOM |
+| mapper容量硬限制 | `2,000,000 / 5,000,000 voxels` | 超限写`.capacity_limited`并拒绝正式finalize |
+| mapper恢复检查点 | `120 s` | 同步磁盘保存；正式结束仍以会话脚本显式保存为准 |
+| 全图调试发布 | `2 s（仅有订阅者时）` | 无RViz订阅时不遍历/序列化整张精细点云 |
+| 失效精细体素清理 | `10 s` | 与全图发布解耦，候选generation过期后仍回收内存 |
 
 ### 10.2 2.5D 高程坡度
 
@@ -246,7 +279,7 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 | fill radius | `4 cells` |
 | fit radius | `0.30 m` |
 | preferred slope | `5 deg` |
-| max slope | `25 deg` |
+| max slope | `22 deg` |
 | max soft slope cost | `80` |
 | obstacle relative height | `0.08-1.50 m` |
 | fuse static obstacles | `false` |
@@ -265,8 +298,9 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 | footprint padding | `0.03 m` | 保留 Scout 原值 |
 | local costmap | `6 x 6 m`、`0.05 m/cell` | odom 滚动窗口 |
 | local observation | marking=`/terrain/obstacle_points`；clearing=`/terrain/clearing_points` | persistence=0 |
+| offline PGM inflation | `0.15 m` | 已确认建图参数；与全局0.10 m依次生效 |
 | start escape | `0.05 m/s`、`0.30 m` | 默认关闭；实车验证后才允许启用 |
-| rear coverage box | X=`-1.05~-0.55 m`、半宽`0.36 m` | terrain_sensor坐标；需20点、X跨度0.20 m、左右各5点、0.25 s内 |
+| rear coverage box | X=`-1.05~-0.55 m`、半宽`0.36 m` | 必须是terrain_sensor帧且header/回调均在0.25 s内；需20点、X跨度0.20 m、左右各5点 |
 | escape stall gate | `1.5 s / 0.02 m` | 倒车无进展时提前停止，不等待8 s总时限 |
 
 ### 10.4 Scout TEB 运动参数
@@ -287,7 +321,7 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 
 | 功能 | 文件 |
 |---|---|
-| 唯一建图入口 | `scout_system_bringup/launch/scout_mapping.launch` |
+| 唯一底层建图链 | `scout_system_bringup/launch/scout_mapping.launch` |
 | 独立定位入口 | `scout_system_bringup/launch/scout_localization.launch` |
 | TF 外参 | `scout_tf_manager/config/extrinsics.yaml` |
 | 绝对雷达高度 | `scout_terrain_filter/config/patchworkpp_scout.yaml` |
@@ -299,6 +333,7 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 | PGM 生成 | `scout_map_tools/src/pcd_to_pgm.cpp` |
 | PGM 参数 | `scout_map_tools/config/scout_raw.yaml`、`scout_nav.yaml` |
 | 高程坡度构建 | `scout_2p5d_navigation/src/terrain_map_builder_node.cpp` |
+| 一键建图监督 | `scout_system_bringup/scripts/scout_mapping_session.py` |
 | 高程参数 | `scout_2p5d_navigation/config/terrain_builder.yaml` |
 | 坡度 costmap 插件 | `scout_2p5d_navigation/src/terrain_costmap_layer.cpp` |
 | 当前帧地形障碍 | `scout_terrain_filter/src/terrain_guard_node.cpp` |
@@ -318,6 +353,7 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 | 默认建图无Patchwork输出 | `enable_online_terrain_diagnostics` | false时正常，不影响最终地图 |
 | 人员残影明显 | 12次/2秒/60%晋升、8次/0.75秒清除 | 人离开并复扫后整代逐步清除 |
 | PGM 障碍缺失 | 离线重建PCD、0.08 m阈值 | 先确认目标高于Scout可跨越阈值 |
+| finalize拒绝capacity-limited | `.capacity_limited`及mapper日志 | 不得删标志交付；提高容量并重新建图 |
 | 全屋不可通行 | `terrain_2p5d` confidence、PGM unknown | 坡度层不能把未知变自由，也不应覆盖全图为 lethal |
 | 定位启动无 map TF | NDT 初值和 PCD | 收敛后才发布 `map -> odom` |
 | 导航一开定位消失 | `roslaunch --nodes` | 导航入口不应包含 NDT/FAST-LIO/底盘 |

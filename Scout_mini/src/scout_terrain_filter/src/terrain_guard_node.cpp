@@ -146,7 +146,7 @@ class TerrainGuard {
     pnh_.param("grid/neighbor_radius_cells", neighbor_radius_cells_, 2);
     pnh_.param("grid/reference_radius_cells", reference_radius_cells_, 3);
 
-    pnh_.param("vehicle/min_horizontal_range", min_horizontal_range_, 0.25);
+    pnh_.param("vehicle/min_horizontal_range", min_horizontal_range_, 0.12);
     pnh_.param("vehicle/max_horizontal_range", max_horizontal_range_, 5.0);
     pnh_.param("vehicle/max_traversable_slope_deg",
                 max_traversable_slope_deg_, 15.0);
@@ -161,7 +161,7 @@ class TerrainGuard {
                 obstacle_min_relative_height_, 0.08);
     pnh_.param("surface/obstacle_max_relative_height",
                 obstacle_max_relative_height_, 1.50);
-    pnh_.param("surface/unknown_absolute_min_z", unknown_absolute_min_z_, -0.35);
+    pnh_.param("surface/unknown_absolute_min_z", unknown_absolute_min_z_, -0.42);
     pnh_.param("surface/unknown_absolute_max_z", unknown_absolute_max_z_, 1.50);
 
     pnh_.param("output/marking_z", marking_z_, 0.20);
@@ -276,18 +276,23 @@ class TerrainGuard {
           design(i, 2) = 1.0;
           heights(i) = neighbors[i].z();
         }
-        const Eigen::Vector3d coefficients =
-            design.colPivHouseholderQr().solve(heights);
-        const Eigen::VectorXd residual = design * coefficients - heights;
-        cell.plane_rmse =
-            std::sqrt(residual.squaredNorm() / neighbors.size());
-        cell.slope_deg =
-            std::atan(std::hypot(coefficients.x(), coefficients.y())) *
-            180.0 / M_PI;
-        const Eigen::Vector2d center = cellCenter(index);
-        cell.smooth_z = coefficients.x() * center.x() +
-                        coefficients.y() * center.y() + coefficients.z();
-        plane_valid = true;
+        const auto decomposition = design.colPivHouseholderQr();
+        // A few cells along one Livox scan line cannot constrain a 2-D ground
+        // plane.  Reject rank-deficient fits instead of clearing on an
+        // arbitrary least-squares solution.
+        if (decomposition.rank() == 3) {
+          const Eigen::Vector3d coefficients = decomposition.solve(heights);
+          const Eigen::VectorXd residual = design * coefficients - heights;
+          cell.plane_rmse =
+              std::sqrt(residual.squaredNorm() / neighbors.size());
+          cell.slope_deg =
+              std::atan(std::hypot(coefficients.x(), coefficients.y())) *
+              180.0 / M_PI;
+          const Eigen::Vector2d center = cellCenter(index);
+          cell.smooth_z = coefficients.x() * center.x() +
+                          coefficients.y() * center.y() + coefficients.z();
+          plane_valid = true;
+        }
       }
 
       const bool excessive_slope =
@@ -300,7 +305,11 @@ class TerrainGuard {
       cell.step_detected = step_detected;
       cell.excessive_slope = excessive_slope;
       cell.rough_surface = rough_surface;
-      cell.safe = !step_detected && !excessive_slope && !rough_surface;
+      // Sparse cells that cannot support a plane are not verified ground.
+      // Failing closed here prevents a single mislabeled return from clearing
+      // a real low obstacle or becoming a height reference for nearby points.
+      cell.safe = plane_valid && !step_detected && !excessive_slope &&
+                  !rough_surface;
     }
   }
 
@@ -394,7 +403,6 @@ class TerrainGuard {
       if (!inRange(point)) {
         continue;
       }
-      clearing.push_back(point);
       double ground_z = 0.0;
       const bool has_reference = referenceGround(point, &ground_z);
       const bool relative_obstacle =
@@ -406,6 +414,10 @@ class TerrainGuard {
           point.z <= unknown_absolute_max_z_;
 
       if (relative_obstacle || conservative_obstacle) {
+        // A nonground return may clear an old obstacle only after it has been
+        // classified.  Unreferenced points outside the conservative height
+        // band remain unknown and must never punch holes in the costmap.
+        clearing.push_back(point);
         Point marker = point;
         marker.z = marking_z_;
         obstacles.push_back(marker);
@@ -561,7 +573,7 @@ class TerrainGuard {
   double max_y_ = 4.0;
   int neighbor_radius_cells_ = 2;
   int reference_radius_cells_ = 3;
-  double min_horizontal_range_ = 0.25;
+  double min_horizontal_range_ = 0.12;
   double max_horizontal_range_ = 5.0;
   double max_traversable_slope_deg_ = 15.0;
   double max_step_height_ = 0.07;
@@ -572,7 +584,7 @@ class TerrainGuard {
   double max_plane_rmse_ = 0.045;
   double obstacle_min_relative_height_ = 0.08;
   double obstacle_max_relative_height_ = 1.50;
-  double unknown_absolute_min_z_ = -0.35;
+  double unknown_absolute_min_z_ = -0.42;
   double unknown_absolute_max_z_ = 1.50;
   double marking_z_ = 0.20;
   bool publish_debug_clouds_ = false;

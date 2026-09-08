@@ -32,7 +32,7 @@ map_raw 静态占据 -------------------------------+
 约束如下：
 
 - FAST-LIO 输入不变，任何过滤点云都不能回灌 FAST-LIO。
-- `scout_mapping.launch`是唯一建图入口；默认只维护贝叶斯静态PCD和车体轨迹，分类PCD、PGM和高程坡度在收尾阶段从同一静态点源统一重建。
+- `scout_mapping.launch`是唯一底层建图链；操作员使用`scout_mapping_session.py`单命令入口，默认维护贝叶斯静态PCD和车体轨迹并在退出后从同一静态点源统一生成分类PCD、PGM和高程坡度。
 - `scout_localization.launch` 与 `navigation_teb.launch` 职责分离。导航入口不启动 Livox、FAST-LIO、NDT 或 Scout 底盘。
 - PGM 仍决定墙体、固定障碍和未知区；坡度层只给已知自由格增加代价，不能把未知格改成自由格。
 - 正式导航使用 GlobalPlanner + TEB。DWA 和旧 TerrainGlobalPlanner 不进入当前代码树。
@@ -43,14 +43,14 @@ map_raw 静态占据 -------------------------------+
 
 ## 2. 目录与包职责
 
-将仓库 `Scout_mini/src/` 中的项目包复制到 `/home/nvidia/livox_fastlio/src/`。本地开发备份采用 `Scout_mini/src/src/` 的 catkin 工作空间布局，两者只相差一层工作空间目录。第三方包按固定版本另行获取，不要把 WheelTech 的底盘、外参和导航参数覆盖到 Scout。
+将仓库 `Scout_mini/src/` 中的项目包复制到 `/home/nvidia/livox_fastlio/src/`。Git仓库布局就是`Scout_mini/src/<各ROS包>`；仓库外Windows备份才使用`D:\设备文档\Scout_mini\src\src\<各ROS包>`这一层级。第三方包按固定版本另行获取，不要把 WheelTech 的底盘、外参和导航参数覆盖到 Scout。
 
 | 包 | 需要复制或配置的内容 | 职责 |
 |---|---|---|
 | `scout_ros`、`ugv_sdk` | Scout 原包 | CAN 驱动、`/scout/odom` 和 `/cmd_vel` |
 | `livox_ros_driver2`、`Livox-SDK2` | 上游依赖 | Mid-360 点云与 IMU |
 | `FAST_LIO` | 上游包加 Scout 配置 | 本地激光惯性里程计 |
-| `scout_system_bringup` | 整包 | 唯一建图入口、独立定位入口和几何真值 |
+| `scout_system_bringup` | 整包 | 一键建图会话、唯一底层建图链、独立定位入口和几何真值 |
 | `scout_tf_manager` | 整包 | `body -> base_link`、`base_link -> terrain_sensor` |
 | `scout_pose_adapter` | 整包 | TF 转 `/fastlio_odom` |
 | `scout_cloud_adapter` | 整包 | 按 launch 参数转换点云坐标系 |
@@ -139,7 +139,7 @@ sensor_height: 0.48
 
 该值是Livox中心到地面的实测垂直高度。它与`base_link -> body`的刚体`z=0.20 m`含义不同。由两者得到`base_link_height_above_ground=0.28 m`，必须写在`scout_geometry.yaml`，供离线地面种子使用。轮胎实测总高为`0.15 m`，对应半径约`0.075 m`。
 
-## 6. 统一建图入口
+## 6. 统一建图入口与一键会话
 
 打开 `scout_system_bringup/launch/scout_mapping.launch`。它必须一次启动：
 
@@ -160,6 +160,14 @@ sensor_height: 0.48
 
 历史入口`scout_system.launch`保留为兼容别名，但其内部只能include`scout_mapping.launch`并透传`map_name`和诊断开关，不能再直接include上游`mapping_mid360.launch`。这样旧操作命令也不会绕过mapper、pose adapter或统一TF链。
 
+交付给操作人员的推荐入口是`scout_system_bringup/scripts/scout_mapping_session.py`：
+
+```bash
+rosrun scout_system_bringup scout_mapping_session.py factory_a
+```
+
+该脚本启动上述底层launch；用户停车、释放遥控/teleop并按一次`Ctrl+C`后，脚本以20 Hz持续发布零速，显式调用mapper保存服务，确认成功后停止launch，最后调用`finalize_map.py --replace-raw`并检查关键文件。不能把finalize节点直接塞进普通XML launch的shutdown回调，因为roslaunch会并发终止mapper和后处理节点，存在PCD尚未落盘就读取的竞态。新增脚本后必须同步修改`scout_system_bringup/CMakeLists.txt`与`package.xml`，声明`rospy`、`geometry_msgs`、`std_srvs`和`roslaunch`运行依赖。
+
 ## 7. 可逆贝叶斯地图与轨迹证据
 
 必须修改以下文件：
@@ -179,7 +187,7 @@ filtered_camera_init.pcd
 traversed_path_map.pcd
 ```
 
-`publish_dynamic_points=false`保持默认，避免Jetson调试带宽。`self_filter=false`保持默认，直到实测车体包围盒确认。
+`publish_dynamic_points=false`保持默认，避免Jetson调试带宽。`self_filter=false`保持默认，直到实测车体包围盒确认。崩溃恢复自动保存周期为120秒；正式结束由会话脚本显式保存。`/scout/static_map_cloud`只有存在订阅者时才重建整图，headless建图不再每2秒遍历和序列化全部精细体素。
 
 需要回归旧在线分类时，显式运行：
 
@@ -192,10 +200,10 @@ roslaunch scout_system_bringup scout_mapping.launch \
 
 ## 8. 地图最终生成
 
-正常结束建图后运行：
+一键会话入口会自动执行本节。仅在底层launch调试、自动收尾失败或从已有PCD恢复时手动运行：
 
 ```bash
-rosrun scout_map_tools finalize_map.py factory_a
+rosrun scout_map_tools finalize_map.py factory_a --replace-raw
 ```
 
 脚本顺序如下：
@@ -208,9 +216,9 @@ rosrun scout_map_tools finalize_map.py factory_a
 6. PGM把0.30 m半宽的真实车体轨迹作为自由证据，障碍证据优先；
 7. 生成`map_raw.*`、`map.*`、分类PCD、`terrain_2p5d.yaml`六层文件和`map_metadata.yaml`。
 
-只有确认要用新的 `filtered_camera_init.pcd` 覆盖已经归档的 raw PCD 时才加 `--replace-raw`。
+若不希望替换已归档raw，可省略`--replace-raw`，脚本只接受内容完全相同的输入。mapper一旦触发体素容量硬限制，会保存恢复PCD和`.capacity_limited`标志并让保存服务失败；finalize默认拒绝该截断地图。`--allow-capacity-limited`仅用于开发抢救，不能交付。
 
-新增/修改文件为`terrain_reclassify.cpp/.yaml`、`pcd_static_gate.cpp`、`pcd_to_pgm.cpp`、`finalize_map.py`和三个Scout地图配置。PGM不做离线障碍膨胀；`free_evidence_radius_m=0.30`来自Scout半宽0.295 m，不复制WheelTech的0.20 m。
+新增/修改文件为`terrain_reclassify.cpp/.yaml`、`pcd_static_gate.cpp`、`pcd_to_pgm.cpp`、`finalize_map.py`和三个Scout地图配置。按用户确认，三份PGM配置的`obstacle_inflation_m=0.15`；move_base现有0.10 m运行时膨胀不改，两者会依次生效而不是相互覆盖。`free_evidence_radius_m=0.30`来自Scout半宽0.295 m，不复制WheelTech的0.20 m。离线重分类、PGM与2.5D builder均设置`max_extent_m=100`和`max_grid_cells=2000000`，遇到远端XY离群点时明确失败，避免Jetson创建无界稠密网格。
 
 ## 9. 高程坡度与当前帧局部障碍
 
@@ -220,14 +228,14 @@ rosrun scout_map_tools finalize_map.py factory_a
 resolution: 0.10
 fit_radius_m: 0.30
 preferred_slope_deg: 5.0
-max_slope_deg: 25.0
+max_slope_deg: 22.0
 max_slope_cost: 80
 obstacle_min_relative_height_m: 0.08
 obstacle_max_relative_height_m: 1.50
 fuse_static_obstacles: false
 ```
 
-每格保存地面高度，局部平面拟合坡度。5 度以内不增加坡度成本，5 到 25 度逐渐增加软代价；持续超过 25 度才成为致命坡度。小孔洞只有邻居充足时才填充，未知区域不能被坡度层改成自由区。
+每格保存地面高度，局部平面拟合坡度。5 度以内不增加坡度成本，5 到 22 度逐渐增加软代价；持续超过 22 度才成为致命坡度。该阈值与当前帧Terrain Guard一致，避免全局允许22～25度而局部封死。小孔洞只有邻居充足时才填充，未知区域不能被坡度层改成自由区。
 
 `fuse_static_obstacles=false`表示静态致命障碍只由PGM StaticLayer负责，2.5D层只叠加坡度软代价，避免同一障碍在粗栅格中二次扩大。
 
@@ -236,6 +244,9 @@ fuse_static_obstacles: false
 - `/terrain/obstacle_points`写入local costmap marking；
 - `/terrain/clearing_points`只执行raytrace clearing；
 - `obstacle_min_relative_height=0.08 m`来自Scout 0.15 m轮径；
+- Patchwork++和Guard最小水平半径为`0.12 m`，只在正前方对应前置Livox到车头边界；侧后方自反射需用实测footprint crop处理；
+- 无地面参考的非地面点以`z=-0.42 m`保守兜底，未分类点不得进入clearing；
+- 邻域不足4格或平面矩阵秩不足3的ground cell按未知/不安全处理，不允许fail-open；
 - `observation_persistence=0`避免历史局部点云拖影。
 
 局部障碍由当前扫描自行估计地面，不查询保存高程，因此不会随`map -> odom`重定位修正整体漂移。
@@ -280,7 +291,7 @@ inflation_dist: 0.10
 
 `costmap_common.yaml` 的 polygon footprint 和 `footprint_padding: 0.03` 未改。TEB `min_obstacle_dist: 0.15` 也未改，它是轨迹净空，不是 costmap 障碍膨胀。
 
-`move_base_slope_teb.yaml`安装并配置了`StartEscapeRecovery`，但`recovery_behavior_enabled=false`保持Scout现有导航行为不变。完成现场静态覆盖验收后才能手动启用。启用时逃逸速度0.05 m/s、目标0.30 m；后向覆盖区按雷达前置0.25 m换算为`terrain_sensor`坐标X=-1.05～-0.55 m、半宽0.36 m。覆盖还必须满足至少20个新鲜点、X跨度0.20 m且左右各至少5点；全局起点不是明确致命碰撞（未知区和图外均拒绝）、局部走廊不安全或1.5秒内位移不足0.02 m时，插件拒绝/停止倒车。TEB自身`max_vel_x_backwards=0`保持原值。
+`move_base_slope_teb.yaml`安装并配置了`StartEscapeRecovery`，但`recovery_behavior_enabled=false`保持Scout现有导航行为不变。完成现场静态覆盖验收后才能手动启用。启用时逃逸速度0.05 m/s、目标0.30 m；后向覆盖区按雷达前置0.25 m换算为`terrain_sensor`坐标X=-1.05～-0.55 m、半宽0.36 m。覆盖还必须来自`terrain_sensor`帧且消息时间戳与回调墙钟都在0.25秒内，并满足至少20点、X跨度0.20 m且左右各至少5点；costmap在互斥锁内检查足迹边界和内部。全局起点不是明确致命碰撞（未知区和图外均拒绝）、局部走廊不安全或1.5秒内位移不足0.02 m时，插件拒绝/停止倒车。TEB自身`max_vel_x_backwards=0`保持原值。
 
 ### 11.1 功能包逐包复现索引
 
@@ -354,7 +365,7 @@ roslaunch --nodes scout_navigation navigation_teb.launch map_name:=check_map
 
 ```bash
 rosrun scout_bringup bringup_can2usb.bash
-roslaunch scout_system_bringup scout_mapping.launch map_name:=factory_a
+rosrun scout_system_bringup scout_mapping_session.py factory_a
 ```
 
 ```bash
@@ -363,12 +374,11 @@ rostopic hz /scout/static_scan
 rostopic hz /fastlio_odom
 ```
 
-正常`Ctrl+C`后确认`filtered_camera_init.pcd`和`traversed_path_map.pcd`均存在。默认不会生成在线分类PCD，这是V5.1预期行为。
+车辆停稳并释放遥控/teleop后按一次`Ctrl+C`，等待`[DONE] finalized map`。此时原始、定位、PGM和2.5D资产应已全部生成。默认不会生成在线累积分类PCD，这是V5.1预期行为。
 
-### 14.2 生成资产
+### 14.2 检查资产（手动命令仅作恢复）
 
 ```bash
-rosrun scout_map_tools finalize_map.py factory_a
 MAP_DIR=/home/nvidia/livox_fastlio/maps/factory_a
 test -s "$MAP_DIR/public_map.pcd"
 test -s "$MAP_DIR/map_raw.yaml"
@@ -414,8 +424,10 @@ rosparam get /move_base/recovery_behaviors
 
 ## 15. 验收清单
 
-- [ ] `scout_mapping.launch` 是唯一建图入口。
+- [ ] `scout_mapping.launch` 是唯一底层建图链，交付入口为会话脚本。
+- [ ] 操作员使用`scout_mapping_session.py NAME`，一次Ctrl+C后按保存、停机、finalize顺序完成。
 - [ ] mapper保存`filtered_camera_init.pcd`与`traversed_path_map.pcd`。
+- [ ] mapper体素容量超限时保存服务和finalize均明确拒绝正式交付。
 - [ ] 静态晋升满足12次、2秒和60%命中率；撤销满足8次自由射线与0.75秒。
 - [ ] FAST-LIO 不读取任何过滤后点云。
 - [ ] `map -> odom` 只有 NDT 一个发布者。
@@ -427,6 +439,8 @@ rosparam get /move_base/recovery_behaviors
 - [ ] `sensor_height=0.48 m` 与实测雷达中心离地高度一致。
 - [ ] `base_link_height_above_ground=0.28 m`，离线地面种子不误用0.20 m刚性偏移。
 - [ ] 轮胎总高 `0.15 m`，正式相对障碍阈值为 `0.08 m`。
+- [ ] PGM离线障碍膨胀为`0.15 m`；move_base/TEB原有导航参数未改。
+- [ ] 保存和当前帧最大可通行坡度均为`22 deg`，近距起点为`0.12 m`。
 - [ ] 导航局部costmap订阅`/terrain/obstacle_points`和`/terrain/clearing_points`，不再订阅elevation前缀旧话题。
 - [ ] `recovery_behavior_enabled=false`保持默认；启用前验证未知区、图外和后向覆盖不足均拒绝倒车。
 - [ ] 实车移动测试前先完成Patchwork++平地输出、TF和后向覆盖检查。

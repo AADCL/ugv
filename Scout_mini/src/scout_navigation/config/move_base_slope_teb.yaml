@@ -29,6 +29,7 @@ start_escape_recovery:
   # in terrain_sensor, covering approximately base_link X=-0.80..-0.30 m.
   # Reverse remains inhibited unless this whole rear corridor has fresh returns.
   rear_cloud_topic: /cloud_registered_terrain
+  rear_cloud_frame: terrain_sensor
   require_rear_observation: true
   rear_min_x: -1.05
   rear_max_x: -0.55

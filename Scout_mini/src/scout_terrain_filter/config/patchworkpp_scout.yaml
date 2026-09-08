@@ -15,7 +15,10 @@ th_dist: 0.08
 th_seeds_v: 0.10
 th_dist_v: 0.08
 
-min_r: 0.25
+# Livox is 0.25 m ahead of base_link and the Scout front edge is x=0.37 m,
+# making 0.12 m a front-direction reference. This remains a radial gate, not a
+# rectangular self crop. Mid-360's specified blind zone is 0.10 m.
+min_r: 0.12
 max_r: 12.0
 uprightness_thr: 0.85
 adaptive_seed_selection_margin: -1.2

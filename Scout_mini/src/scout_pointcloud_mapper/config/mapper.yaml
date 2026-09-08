@@ -68,7 +68,13 @@ dynamic_filter:
 map:
   voxel_size: 0.05
   max_voxels: 5000000
-  autosave_period: 30.0
+  # Remove fine samples whose Bayesian generation expired without rebuilding
+  # or serializing the complete output cloud.
+  prune_period: 10.0
+  # Explicit session shutdown is authoritative. Keep a lower-frequency crash
+  # recovery checkpoint without forcing a multi-million-voxel disk write every
+  # 30 seconds on Jetson.
+  autosave_period: 120.0
   save_on_shutdown: true
   # At 20 Hz this preserves a continuous centre path without storing stationary
   # duplicates. The PGM converter expands it only by the measured half width.

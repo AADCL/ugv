@@ -1,7 +1,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <fstream>
 #include <limits>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -180,7 +182,8 @@ class PointcloudMapper {
     pnh_.param("map/max_voxels", max_map_voxels_param, 5000000);
     max_map_voxels_ =
         static_cast<std::size_t>(std::max(1, max_map_voxels_param));
-    pnh_.param("map/autosave_period", autosave_period_, 30.0);
+    pnh_.param("map/prune_period", map_prune_period_, 10.0);
+    pnh_.param("map/autosave_period", autosave_period_, 120.0);
     pnh_.param("map/save_on_shutdown", save_on_shutdown_, true);
     pnh_.param("map/trajectory_min_distance",
                trajectory_min_distance_, 0.05);
@@ -214,6 +217,7 @@ class PointcloudMapper {
     map_publish_period_ = std::max(0.1, map_publish_period_);
     autosave_period_ = std::max(1.0, autosave_period_);
     trajectory_min_distance_ = std::max(0.01, trajectory_min_distance_);
+    map_prune_period_ = std::max(1.0, map_prune_period_);
 
     if (hit_log_odds_ <= 0.0 || miss_log_odds_ >= 0.0) {
       ROS_WARN("Invalid Bayesian probabilities; using hit=0.70, miss=0.40");
@@ -571,9 +575,17 @@ class PointcloudMapper {
       occupied_this_scan.insert(voxelKey(point, temporal_voxel_size_));
     }
 
+    bool capacity_prune_attempted = false;
     for (const Point& point : filtered->points) {
       const VoxelKey key = voxelKey(point, temporal_voxel_size_);
       if (dynamic_filter_enable_) {
+        if (temporal_voxels_.find(key) == temporal_voxels_.end() &&
+            temporal_voxels_.size() >= max_voxels_) {
+          ++occupancy_capacity_dropped_points_;
+          dirty_ = true;
+          if (publish_dynamic_) dynamic_scan.push_back(point);
+          continue;
+        }
         updateHit(key, msg->header.stamp);
       }
       const OccupancyVoxelState* occupancy = nullptr;
@@ -589,7 +601,21 @@ class PointcloudMapper {
       }
 
       const VoxelKey map_key = voxelKey(point, map_voxel_size_);
-      MapVoxelState& map_state = map_voxels_[map_key];
+      auto map_it = map_voxels_.find(map_key);
+      if (map_it == map_voxels_.end()) {
+        if (map_voxels_.size() >= max_map_voxels_ &&
+            !capacity_prune_attempted) {
+          pruneInvalidMapVoxels();
+          capacity_prune_attempted = true;
+        }
+        if (map_voxels_.size() >= max_map_voxels_) {
+          ++map_capacity_dropped_points_;
+          dirty_ = true;
+          continue;
+        }
+        map_it = map_voxels_.emplace(map_key, MapVoxelState()).first;
+      }
+      MapVoxelState& map_state = map_it->second;
       const uint64_t generation = dynamic_filter_enable_
                                       ? occupancy->generation
                                       : 1;
@@ -621,13 +647,16 @@ class PointcloudMapper {
         5.0,
         "Mapper: input=%zu filtered=%zu static_scan=%zu map=%zu occupancy=%zu "
         "bayes_promoted=%llu bayes_demoted=%llu bayes_cleared=%llu "
-        "ray_voxels=%llu",
+        "ray_voxels=%llu map_pruned=%llu capacity_dropped=%llu/%llu",
         input->size(), filtered->size(), static_scan.size(),
         map_voxels_.size(), temporal_voxels_.size(),
         static_cast<unsigned long long>(bayesian_promoted_voxels_),
         static_cast<unsigned long long>(bayesian_demoted_voxels_),
         static_cast<unsigned long long>(bayesian_cleared_voxels_),
-        static_cast<unsigned long long>(ray_voxel_visits_));
+        static_cast<unsigned long long>(ray_voxel_visits_),
+        static_cast<unsigned long long>(map_pruned_voxels_),
+        static_cast<unsigned long long>(occupancy_capacity_dropped_points_),
+        static_cast<unsigned long long>(map_capacity_dropped_points_));
   }
 
   void publishCloud(const Cloud& cloud, const ros::Publisher& publisher,
@@ -653,6 +682,7 @@ class PointcloudMapper {
             occupancy_it->second.generation !=
                 state.occupancy_generation) {
           it = map_voxels_.erase(it);
+          ++map_pruned_voxels_;
           dirty_ = true;
           continue;
         }
@@ -677,24 +707,56 @@ class PointcloudMapper {
     return map;
   }
 
-  void maybeCleanup(const ros::Time& now) {
-    if (!last_cleanup_.isZero() &&
-        (now - last_cleanup_).toSec() < cleanup_period_ &&
-        temporal_voxels_.size() <= max_voxels_) {
-      return;
-    }
-    last_cleanup_ = now;
-    for (auto it = temporal_voxels_.begin();
-         it != temporal_voxels_.end();) {
-      const bool expired = !isStatic(it->second) &&
-                           !it->second.last_seen.isZero() &&
-                           (now - it->second.last_seen).toSec() >
-                               candidate_timeout_;
-      if (expired) {
-        it = temporal_voxels_.erase(it);
+  void pruneInvalidMapVoxels() {
+    for (auto it = map_voxels_.begin(); it != map_voxels_.end();) {
+      const MapVoxelState& state = it->second;
+      bool invalid = state.sample_count == 0;
+      if (!invalid && dynamic_filter_enable_) {
+        const auto occupancy_it = temporal_voxels_.find(state.occupancy_key);
+        invalid = occupancy_it == temporal_voxels_.end() ||
+                  occupancy_it->second.generation !=
+                      state.occupancy_generation;
+      }
+      if (invalid) {
+        it = map_voxels_.erase(it);
+        ++map_pruned_voxels_;
+        dirty_ = true;
       } else {
         ++it;
       }
+    }
+  }
+
+  void maybeCleanup(const ros::Time& now) {
+    const bool temporal_cleanup_due =
+        last_cleanup_.isZero() ||
+        (now - last_cleanup_).toSec() >= cleanup_period_ ||
+        temporal_voxels_.size() > max_voxels_;
+    const bool map_prune_due =
+        last_map_prune_.isZero() ||
+        (now - last_map_prune_).toSec() >= map_prune_period_ ||
+        map_voxels_.size() >= (max_map_voxels_ * 9U) / 10U;
+    if (!temporal_cleanup_due && !map_prune_due) {
+      return;
+    }
+    if (temporal_cleanup_due) {
+      last_cleanup_ = now;
+      for (auto it = temporal_voxels_.begin();
+           it != temporal_voxels_.end();) {
+        const bool expired = !isStatic(it->second) &&
+                             !it->second.last_seen.isZero() &&
+                             (now - it->second.last_seen).toSec() >
+                                 candidate_timeout_;
+        if (expired) {
+          it = temporal_voxels_.erase(it);
+        } else {
+          ++it;
+        }
+      }
+    }
+    if (map_prune_due) {
+      last_map_prune_ = now;
+      pruneInvalidMapVoxels();
     }
     if (temporal_voxels_.size() > max_voxels_) {
       ROS_ERROR_THROTTLE(
@@ -710,7 +772,10 @@ class PointcloudMapper {
   }
 
   void publishMapTimer(const ros::TimerEvent&) {
-    if (frame_id_.empty()) {
+    // The deliverable is the on-disk PCD. Avoid rebuilding and serializing a
+    // potentially multi-million-point latched cloud every two seconds when no
+    // RViz/debug subscriber is present.
+    if (frame_id_.empty() || static_map_pub_.getNumSubscribers() == 0) {
       return;
     }
     const Cloud map = buildMapCloud();
@@ -735,14 +800,21 @@ class PointcloudMapper {
       *message = "No confirmed static map points are available";
       return false;
     }
+    const bool capacity_limited =
+        occupancy_capacity_dropped_points_ > 0 ||
+        map_capacity_dropped_points_ > 0;
+    const std::string temporary_output = output_path_ + ".tmp";
+    const std::string temporary_trajectory =
+        trajectory_output_path_ + ".tmp";
+    const std::string capacity_marker = output_path_ + ".capacity_limited";
+    const std::string temporary_marker = capacity_marker + ".tmp";
     try {
       const boost::filesystem::path output(output_path_);
       if (output.has_parent_path()) {
         boost::filesystem::create_directories(output.parent_path());
       }
-      if (pcl::io::savePCDFileBinary(output_path_, map) != 0) {
-        *message = "PCL failed to write " + output_path_;
-        return false;
+      if (pcl::io::savePCDFileBinary(temporary_output, map) != 0) {
+        throw std::runtime_error("PCL failed to write " + temporary_output);
       }
       if (!trajectory_.empty()) {
         const boost::filesystem::path trajectory_output(
@@ -752,26 +824,69 @@ class PointcloudMapper {
               trajectory_output.parent_path());
         }
         if (pcl::io::savePCDFileBinary(
-                trajectory_output_path_, trajectory_) != 0) {
-          *message = "PCL failed to write " + trajectory_output_path_;
-          return false;
+                temporary_trajectory, trajectory_) != 0) {
+          throw std::runtime_error(
+              "PCL failed to write " + temporary_trajectory);
         }
-      } else if (!trajectory_output_path_.empty() &&
-                 boost::filesystem::exists(trajectory_output_path_)) {
-        // Reusing a map name must never pair a fresh static PCD with traversal
-        // evidence left by an older session.
+      }
+
+      // Prepare every file before replacing any member of the previous map
+      // pair.  A capacity marker is committed first (fail closed).  The old
+      // trajectory is removed before the new map, so an interruption can at
+      // worst leave a map without free-path evidence, never a new map paired
+      // with a stale trajectory from another session.
+      if (capacity_limited) {
+        std::ofstream marker(temporary_marker, std::ios::out | std::ios::trunc);
+        if (!marker.is_open()) {
+          throw std::runtime_error(
+              "Cannot write capacity marker " + temporary_marker);
+        }
+        marker << "occupancy_capacity_dropped_points: "
+               << occupancy_capacity_dropped_points_ << '\n'
+               << "map_capacity_dropped_points: "
+               << map_capacity_dropped_points_ << '\n';
+        marker.close();
+        boost::filesystem::rename(temporary_marker, capacity_marker);
+      }
+      if (!trajectory_output_path_.empty() &&
+          boost::filesystem::exists(trajectory_output_path_)) {
         boost::filesystem::remove(trajectory_output_path_);
       }
+      boost::filesystem::rename(temporary_output, output_path_);
+      if (!trajectory_.empty()) {
+        boost::filesystem::rename(
+            temporary_trajectory, trajectory_output_path_);
+      }
+      if (!capacity_limited && boost::filesystem::exists(capacity_marker)) {
+        boost::filesystem::remove(capacity_marker);
+      }
     } catch (const std::exception& error) {
+      for (const std::string& temporary :
+           {temporary_output, temporary_trajectory, temporary_marker}) {
+        if (boost::filesystem::exists(temporary)) {
+          boost::filesystem::remove(temporary);
+        }
+      }
       *message = error.what();
       return false;
     }
+
     dirty_ = false;
     *message = "Saved " + std::to_string(map.size()) +
                " fine static-map points to " + output_path_ + "; " +
                std::to_string(trajectory_.size()) + " traversed base poses";
     if (!trajectory_.empty()) {
       *message += " to " + trajectory_output_path_;
+    }
+    if (capacity_limited) {
+      *message =
+          "CAPACITY LIMIT REACHED; the recovery PCD was saved but is "
+          "incomplete and finalize_map.py will reject it. " + *message +
+          "; dropped occupancy/map points=" +
+          std::to_string(occupancy_capacity_dropped_points_) + "/" +
+          std::to_string(map_capacity_dropped_points_) +
+          ". Raise dynamic_filter/max_voxels or map/max_voxels and remap.";
+      return false;
     }
     return true;
   }
@@ -799,6 +914,11 @@ class PointcloudMapper {
     bayesian_demoted_voxels_ = 0;
     bayesian_cleared_voxels_ = 0;
     ray_voxel_visits_ = 0;
+    map_pruned_voxels_ = 0;
+    occupancy_capacity_dropped_points_ = 0;
+    map_capacity_dropped_points_ = 0;
+    last_cleanup_ = ros::Time();
+    last_map_prune_ = ros::Time();
     dirty_ = false;
     ROS_WARN("scout_pointcloud_mapper map was reset");
     return true;
@@ -865,7 +985,8 @@ class PointcloudMapper {
   std::size_t max_voxels_ = 2000000;
   double map_voxel_size_ = 0.05;
   std::size_t max_map_voxels_ = 5000000;
-  double autosave_period_ = 30.0;
+  double map_prune_period_ = 10.0;
+  double autosave_period_ = 120.0;
   bool save_on_shutdown_ = true;
   double map_publish_period_ = 2.0;
   bool publish_dynamic_ = false;
@@ -883,7 +1004,11 @@ class PointcloudMapper {
   uint64_t bayesian_demoted_voxels_ = 0;
   uint64_t bayesian_cleared_voxels_ = 0;
   uint64_t ray_voxel_visits_ = 0;
+  uint64_t map_pruned_voxels_ = 0;
+  uint64_t occupancy_capacity_dropped_points_ = 0;
+  uint64_t map_capacity_dropped_points_ = 0;
   ros::Time last_cleanup_;
+  ros::Time last_map_prune_;
   ros::Time last_cloud_stamp_;
   bool dirty_ = false;
   std::unordered_map<VoxelKey, OccupancyVoxelState, VoxelKeyHash>

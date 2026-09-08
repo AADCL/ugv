@@ -9,7 +9,7 @@ find_package(catkin REQUIRED COMPONENTS
   tf2_geometry_msgs tf2_ros visualization_msgs)
 find_package(PCL REQUIRED COMPONENTS common io)
 find_package(yaml-cpp REQUIRED)
-find_package(Boost REQUIRED COMPONENTS filesystem system)
+find_package(Boost REQUIRED COMPONENTS filesystem system thread)
 
 catkin_package(
   INCLUDE_DIRS include
@@ -25,7 +25,7 @@ target_link_libraries(scout_terrain_map ${catkin_LIBRARIES} ${Boost_LIBRARIES} y
 add_library(scout_2p5d_plugins
   src/terrain_costmap_layer.cpp
   src/start_escape_recovery.cpp)
-target_link_libraries(scout_2p5d_plugins scout_terrain_map ${catkin_LIBRARIES})
+target_link_libraries(scout_2p5d_plugins scout_terrain_map ${catkin_LIBRARIES} ${Boost_LIBRARIES})
 
 add_executable(terrain_map_builder_node src/terrain_map_builder_node.cpp)
 target_link_libraries(terrain_map_builder_node scout_terrain_map ${catkin_LIBRARIES} ${PCL_LIBRARIES} yaml-cpp)

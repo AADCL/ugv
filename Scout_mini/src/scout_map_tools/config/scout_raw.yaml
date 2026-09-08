@@ -1,5 +1,7 @@
 resolution: 0.05
 padding_m: 0.50
+grid/max_extent_m: 100.0
+grid/max_cells: 2000000
 
 floor_min_z: -0.30
 floor_max_z: 0.05
@@ -12,7 +14,8 @@ free_dilation_m: 0.10
 # Scout Mini half width is about 0.295 m; use 0.30 m and do not include the
 # runtime costmap padding here.
 free_evidence_radius_m: 0.30
-obstacle_inflation_m: 0.00
+# User-confirmed offline mapping inflation; navigation parameters stay intact.
+obstacle_inflation_m: 0.15
 
 # Only nonground points supported by nearby ground and within this relative
 # height band become obstacles. This rejects ceilings in indoor maps.

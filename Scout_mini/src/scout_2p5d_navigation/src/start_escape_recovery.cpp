@@ -7,7 +7,9 @@
 #include <utility>
 #include <vector>
 
+#include <boost/thread/locks.hpp>
 #include <base_local_planner/costmap_model.h>
+#include <costmap_2d/cost_values.h>
 #include <costmap_2d/costmap_2d_ros.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/Twist.h>
@@ -49,6 +51,8 @@ class StartEscapeRecovery : public nav_core::RecoveryBehavior {
     private_nh.param<std::string>("cmd_vel_topic", cmd_vel_topic_, "cmd_vel");
     private_nh.param<std::string>("rear_cloud_topic", rear_cloud_topic_,
                                   "/cloud_registered_terrain");
+    private_nh.param<std::string>("rear_cloud_frame", rear_cloud_frame_,
+                                  "terrain_sensor");
     private_nh.param("require_rear_observation", require_rear_observation_, true);
     private_nh.param("rear_min_x", rear_min_x_, -1.05);
     private_nh.param("rear_max_x", rear_max_x_, -0.55);
@@ -204,6 +208,20 @@ class StartEscapeRecovery : public nav_core::RecoveryBehavior {
 
  private:
   void rearCloudCallback(const sensor_msgs::PointCloud2ConstPtr& message) {
+    const bool frame_matches =
+        message->header.frame_id == rear_cloud_frame_ ||
+        message->header.frame_id == "/" + rear_cloud_frame_;
+    const double stamp_age =
+        message->header.stamp.isZero()
+            ? std::numeric_limits<double>::infinity()
+            : (ros::Time::now() - message->header.stamp).toSec();
+    if (!frame_matches || stamp_age < -0.05 ||
+        stamp_age > rear_observation_timeout_) {
+      ROS_ERROR_THROTTLE(
+          2.0, "Rear coverage rejected: frame='%s' expected='%s', stamp age=%.3f s",
+          message->header.frame_id.c_str(), rear_cloud_frame_.c_str(), stamp_age);
+      return;
+    }
     int count = 0;
     int left_count = 0;
     int right_count = 0;
@@ -233,13 +251,20 @@ class StartEscapeRecovery : public nav_core::RecoveryBehavior {
         left_count >= rear_min_points_per_side_ &&
         right_count >= rear_min_points_per_side_;
     rear_received_wall_time_ = ros::WallTime::now();
+    rear_cloud_stamp_ = message->header.stamp;
   }
 
   bool rearObserved() const {
     if (!require_rear_observation_) return true;
     std::lock_guard<std::mutex> lock(rear_mutex_);
     const double age = (ros::WallTime::now() - rear_received_wall_time_).toSec();
+    const double stamp_age = rear_cloud_stamp_.isZero()
+                                 ? std::numeric_limits<double>::infinity()
+                                 : (ros::Time::now() - rear_cloud_stamp_).toSec();
     if (rear_received_wall_time_.isZero() || age > rear_observation_timeout_) {
+      return false;
+    }
+    if (stamp_age < -0.05 || stamp_age > rear_observation_timeout_) {
       return false;
     }
     return rear_point_count_ >= rear_min_points_ && rear_distribution_ok_;
@@ -247,8 +272,70 @@ class StartEscapeRecovery : public nav_core::RecoveryBehavior {
 
   double footprintCost(costmap_2d::Costmap2DROS* costmap_ros, double x,
                        double y, double yaw) const {
-    base_local_planner::CostmapModel model(*costmap_ros->getCostmap());
-    return model.footprintCost(x, y, yaw, costmap_ros->getRobotFootprint());
+    costmap_2d::Costmap2D* costmap = costmap_ros->getCostmap();
+    const std::vector<geometry_msgs::Point> footprint =
+        costmap_ros->getRobotFootprint();
+    if (footprint.size() < 3) {
+      ROS_ERROR_THROTTLE(2.0,
+                         "StartEscapeRecovery requires a polygon footprint");
+      return -3.0;
+    }
+    boost::unique_lock<costmap_2d::Costmap2D::mutex_t> costmap_lock(
+        *costmap->getMutex());
+    base_local_planner::CostmapModel model(*costmap);
+    const double boundary_cost = model.footprintCost(x, y, yaw, footprint);
+    if (boundary_cost < 0.0) return boundary_cost;
+
+    const double cosine = std::cos(yaw);
+    const double sine = std::sin(yaw);
+    std::vector<std::pair<double, double>> polygon;
+    polygon.reserve(footprint.size());
+    double min_x = std::numeric_limits<double>::infinity();
+    double min_y = std::numeric_limits<double>::infinity();
+    double max_x = -std::numeric_limits<double>::infinity();
+    double max_y = -std::numeric_limits<double>::infinity();
+    for (const geometry_msgs::Point& point : footprint) {
+      const double world_x = x + cosine * point.x - sine * point.y;
+      const double world_y = y + sine * point.x + cosine * point.y;
+      polygon.emplace_back(world_x, world_y);
+      min_x = std::min(min_x, world_x);
+      min_y = std::min(min_y, world_y);
+      max_x = std::max(max_x, world_x);
+      max_y = std::max(max_y, world_y);
+    }
+
+    unsigned int min_mx = 0;
+    unsigned int min_my = 0;
+    unsigned int max_mx = 0;
+    unsigned int max_my = 0;
+    if (!costmap->worldToMap(min_x, min_y, min_mx, min_my) ||
+        !costmap->worldToMap(max_x, max_y, max_mx, max_my)) {
+      return -3.0;
+    }
+    for (unsigned int my = min_my; my <= max_my; ++my) {
+      for (unsigned int mx = min_mx; mx <= max_mx; ++mx) {
+        double world_x = 0.0;
+        double world_y = 0.0;
+        costmap->mapToWorld(mx, my, world_x, world_y);
+        bool inside = false;
+        for (std::size_t i = 0, j = polygon.size() - 1;
+             i < polygon.size(); j = i++) {
+          const bool crosses =
+              ((polygon[i].second > world_y) !=
+               (polygon[j].second > world_y)) &&
+              (world_x < (polygon[j].first - polygon[i].first) *
+                                 (world_y - polygon[i].second) /
+                                 (polygon[j].second - polygon[i].second) +
+                             polygon[i].first);
+          if (crosses) inside = !inside;
+        }
+        if (!inside) continue;
+        const unsigned char cost = costmap->getCost(mx, my);
+        if (cost == costmap_2d::NO_INFORMATION) return -2.0;
+        if (cost >= costmap_2d::INSCRIBED_INFLATED_OBSTACLE) return -1.0;
+      }
+    }
+    return boundary_cost;
   }
 
   void stopRobot() {
@@ -269,6 +356,7 @@ class StartEscapeRecovery : public nav_core::RecoveryBehavior {
   std::string name_;
   std::string cmd_vel_topic_ = "cmd_vel";
   std::string rear_cloud_topic_ = "/cloud_registered_terrain";
+  std::string rear_cloud_frame_ = "terrain_sensor";
   double backward_speed_ = 0.05;
   double escape_distance_ = 0.30;
   double lookahead_distance_ = 0.10;
@@ -290,6 +378,7 @@ class StartEscapeRecovery : public nav_core::RecoveryBehavior {
   int rear_point_count_ = 0;
   bool rear_distribution_ok_ = false;
   ros::WallTime rear_received_wall_time_;
+  ros::Time rear_cloud_stamp_;
 };
 
 }  // namespace scout_2p5d_navigation

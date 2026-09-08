@@ -1,9 +1,12 @@
 resolution: 0.05
 padding_m: 0.50
+grid/max_extent_m: 100.0
+grid/max_cells: 2000000
 
 # The rebuilt slope-aware surface is the height source; obstacles stay lethal.
 free_dilation_m: 0.10
-obstacle_inflation_m: 0.00
+# Keep diagnostic terrain output aligned with the two occupancy products.
+obstacle_inflation_m: 0.15
 
 classified_obstacle/ground_search_radius_m: 0.30
 classified_obstacle/min_relative_height_m: 0.08

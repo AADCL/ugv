@@ -1,4 +1,5 @@
-min_range: 0.25
+# Radial near gate; 0.12 m matches the bumper only in the forward direction.
+min_range: 0.12
 max_range: 5.0
 
 # Relative to the saved elevation surface, not base_link Z. The 150 mm wheel

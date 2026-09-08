@@ -96,6 +96,11 @@ class TerrainReclassifier {
     pnh_.param<std::string>("output_ground_pcd", output_ground_path_, "");
     pnh_.param<std::string>("output_obstacle_pcd", output_obstacle_path_, "");
     pnh_.param("cell_size", cell_size_, 0.05);
+    pnh_.param("max_extent_m", max_extent_m_, 100.0);
+    int max_grid_cells_param = 2000000;
+    pnh_.param("max_grid_cells", max_grid_cells_param, 2000000);
+    max_grid_cells_ = static_cast<std::size_t>(
+        std::max(1, max_grid_cells_param));
     pnh_.param("candidate_percentile", candidate_percentile_, 0.05);
     pnh_.param("seed_x", seed_x_, 0.0);
     pnh_.param("seed_y", seed_y_, 0.0);
@@ -117,7 +122,7 @@ class TerrainReclassifier {
     pnh_.param("plane_min_spread_m", plane_min_spread_m_, 0.04);
     pnh_.param("candidate_plane_tolerance_m", candidate_plane_tolerance_m_, 0.05);
     pnh_.param("plane_max_rmse_m", plane_max_rmse_m_, 0.035);
-    pnh_.param("max_ground_slope_deg", max_ground_slope_deg_, 25.0);
+    pnh_.param("max_ground_slope_deg", max_ground_slope_deg_, 22.0);
     pnh_.param("connect_radius_m", connect_radius_m_, 0.25);
     pnh_.param("connection_plane_tolerance_m", connection_plane_tolerance_m_, 0.05);
     pnh_.param("connection_max_normal_delta_deg",
@@ -143,7 +148,8 @@ class TerrainReclassifier {
         output_obstacle_path_.empty()) {
       throw std::runtime_error("Input, ground and obstacle PCD paths are required");
     }
-    if (cell_size_ <= 0.0 || candidate_percentile_ < 0.0 ||
+    if (cell_size_ <= 0.0 || max_extent_m_ < cell_size_ ||
+        candidate_percentile_ < 0.0 ||
         candidate_percentile_ > 1.0 || seed_radius_m_ < cell_size_ ||
         trusted_seed_height_tolerance_m_ <= 0.0 ||
         pmf_max_window_size_ < 3 || pmf_slope_ < 0.0 ||
@@ -247,11 +253,31 @@ class TerrainReclassifier {
     if (!std::isfinite(min_x_) || !std::isfinite(min_y_)) {
       throw std::runtime_error("Input contains no finite points");
     }
-    width_ = std::max(
-        1, static_cast<int>(std::floor((max_x - min_x_) / cell_size_)) + 1);
-    height_ = std::max(
-        1, static_cast<int>(std::floor((max_y - min_y_) / cell_size_)) + 1);
-    cells_.resize(static_cast<std::size_t>(width_) * height_);
+    const double extent_x = max_x - min_x_;
+    const double extent_y = max_y - min_y_;
+    if (extent_x > max_extent_m_ || extent_y > max_extent_m_) {
+      throw std::runtime_error(
+          "Terrain input extent " + std::to_string(extent_x) + " x " +
+          std::to_string(extent_y) + " m exceeds max_extent_m=" +
+          std::to_string(max_extent_m_) +
+          "; remove far XY outliers or deliberately raise the limit");
+    }
+    const uint64_t width = static_cast<uint64_t>(
+        std::floor(extent_x / cell_size_)) + 1U;
+    const uint64_t height = static_cast<uint64_t>(
+        std::floor(extent_y / cell_size_)) + 1U;
+    if (width > static_cast<uint64_t>(std::numeric_limits<int>::max()) ||
+        height > static_cast<uint64_t>(std::numeric_limits<int>::max()) ||
+        height == 0U || width > max_grid_cells_ / height) {
+      throw std::runtime_error(
+          "Terrain grid " + std::to_string(width) + " x " +
+          std::to_string(height) + " exceeds max_grid_cells=" +
+          std::to_string(max_grid_cells_) +
+          "; remove far XY outliers or deliberately raise the limit");
+    }
+    width_ = static_cast<int>(width);
+    height_ = static_cast<int>(height);
+    cells_.resize(static_cast<std::size_t>(width * height));
 
     for (const Point& point : input_->points) {
       if (!finite(point)) continue;
@@ -756,6 +782,8 @@ class TerrainReclassifier {
   std::string output_ground_path_;
   std::string output_obstacle_path_;
   double cell_size_ = 0.05;
+  double max_extent_m_ = 100.0;
+  std::size_t max_grid_cells_ = 2000000;
   double candidate_percentile_ = 0.05;
   double seed_x_ = 0.0;
   double seed_y_ = 0.0;
@@ -776,7 +804,7 @@ class TerrainReclassifier {
   double plane_min_spread_m_ = 0.04;
   double candidate_plane_tolerance_m_ = 0.05;
   double plane_max_rmse_m_ = 0.035;
-  double max_ground_slope_deg_ = 25.0;
+  double max_ground_slope_deg_ = 22.0;
   double connect_radius_m_ = 0.25;
   double connection_plane_tolerance_m_ = 0.05;
   double connection_max_normal_delta_deg_ = 20.0;

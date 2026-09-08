@@ -28,6 +28,11 @@ public:
 
         pnh_.param<double>("resolution", resolution_, 0.05);
         pnh_.param<double>("padding_m", padding_m_, 0.50);
+        pnh_.param<double>("grid/max_extent_m", max_extent_m_, 100.0);
+        int max_grid_cells_param = 2000000;
+        pnh_.param("grid/max_cells", max_grid_cells_param, 2000000);
+        max_grid_cells_ = static_cast<std::size_t>(
+            std::max(1, max_grid_cells_param));
         pnh_.param<double>("floor_min_z", floor_min_z_, -0.30);
         pnh_.param<double>("floor_max_z", floor_max_z_, 0.05);
         pnh_.param<double>("obstacle_min_z", obstacle_min_z_, 0.05);
@@ -35,7 +40,7 @@ public:
         pnh_.param<double>("free_dilation_m", free_dilation_m_, 0.10);
         pnh_.param<double>("free_evidence_radius_m",
                            free_evidence_radius_m_, 0.20);
-        pnh_.param<double>("obstacle_inflation_m", obstacle_inflation_m_, 0.10);
+        pnh_.param<double>("obstacle_inflation_m", obstacle_inflation_m_, 0.15);
         pnh_.param<double>("classified_obstacle/ground_search_radius_m",
                            classified_ground_search_radius_m_, 0.30);
         pnh_.param<double>("classified_ground/height_percentile",
@@ -71,11 +76,43 @@ public:
         classified_obstacle_min_points_per_cell_ = std::max(
             1, classified_obstacle_min_points_per_cell_);
         free_evidence_radius_m_ = std::max(0.0, free_evidence_radius_m_);
+        if (resolution_ <= 0.0 || padding_m_ < 0.0 ||
+            max_extent_m_ < resolution_)
+            throw std::runtime_error("Invalid PGM grid parameters");
 
         generate();
     }
 
 private:
+    std::size_t configureGrid(double max_x, double max_y)
+    {
+        const double extent_x = max_x - min_x_;
+        const double extent_y = max_y - min_y_;
+        if (!std::isfinite(extent_x) || !std::isfinite(extent_y) ||
+            extent_x <= 0.0 || extent_y <= 0.0)
+            throw std::runtime_error("PCD has invalid XY bounds");
+        if (extent_x > max_extent_m_ || extent_y > max_extent_m_)
+            throw std::runtime_error(
+                "PGM extent " + std::to_string(extent_x) + " x " +
+                std::to_string(extent_y) + " m exceeds grid/max_extent_m=" +
+                std::to_string(max_extent_m_));
+
+        const uint64_t width = std::max<uint64_t>(
+            1U, static_cast<uint64_t>(std::ceil(extent_x / resolution_)));
+        const uint64_t height = std::max<uint64_t>(
+            1U, static_cast<uint64_t>(std::ceil(extent_y / resolution_)));
+        if (width > static_cast<uint64_t>(std::numeric_limits<int>::max()) ||
+            height > static_cast<uint64_t>(std::numeric_limits<int>::max()) ||
+            height == 0U || width > max_grid_cells_ / height)
+            throw std::runtime_error(
+                "PGM grid " + std::to_string(width) + " x " +
+                std::to_string(height) + " exceeds grid/max_cells=" +
+                std::to_string(max_grid_cells_));
+        width_ = static_cast<int>(width);
+        height_ = static_cast<int>(height);
+        return static_cast<std::size_t>(width * height);
+    }
+
     int index(int x, int y) const
     {
         return y * width_ + x;
@@ -241,11 +278,7 @@ private:
         max_x += padding_m_;
         max_y += padding_m_;
 
-        width_ = static_cast<int>(std::ceil((max_x - min_x_) / resolution_));
-        height_ = static_cast<int>(std::ceil((max_y - min_y_) / resolution_));
-
-        const std::size_t cell_count =
-            static_cast<std::size_t>(width_) * static_cast<std::size_t>(height_);
+        const std::size_t cell_count = configureGrid(max_x, max_y);
 
         std::vector<uint32_t> floor_count(cell_count, 0);
         std::vector<uint32_t> obstacle_count(cell_count, 0);
@@ -360,9 +393,7 @@ private:
         min_y_ -= padding_m_;
         max_x += padding_m_;
         max_y += padding_m_;
-        width_ = std::max(1, static_cast<int>(std::ceil((max_x - min_x_) / resolution_)));
-        height_ = std::max(1, static_cast<int>(std::ceil((max_y - min_y_) / resolution_)));
-        const std::size_t cell_count = static_cast<std::size_t>(width_) * height_;
+        const std::size_t cell_count = configureGrid(max_x, max_y);
         std::vector<uint8_t> floor_mask(cell_count, 0);
         std::vector<uint8_t> obstacle_mask(cell_count, 0);
         std::vector<std::vector<float>> ground_samples(cell_count);
@@ -603,6 +634,8 @@ private:
 
     double resolution_;
     double padding_m_;
+    double max_extent_m_{100.0};
+    std::size_t max_grid_cells_{2000000};
     double floor_min_z_;
     double floor_max_z_;
     double obstacle_min_z_;

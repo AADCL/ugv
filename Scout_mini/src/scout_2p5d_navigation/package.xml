@@ -22,7 +22,7 @@
   <depend>tf2_geometry_msgs</depend>
   <depend>tf2_ros</depend>
   <depend>visualization_msgs</depend>
-  <build_depend>libyaml-cpp-dev</build_depend>
+  <depend>libyaml-cpp-dev</depend>
 
   <export>
     <costmap_2d plugin="${prefix}/scout_2p5d_plugins.xml" />

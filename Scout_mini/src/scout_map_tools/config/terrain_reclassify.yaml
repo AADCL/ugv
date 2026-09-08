@@ -3,6 +3,9 @@
 # ground classifier. Local robust planes grow those seeds across continuous
 # slopes and rebuild obstacles by height relative to the fitted surface.
 cell_size: 0.05
+# Dense offline grid hard limits protect Jetson from an isolated far-XY return.
+max_extent_m: 100.0
+max_grid_cells: 2000000
 candidate_percentile: 0.05
 
 # PMF uses a large window to avoid selecting the indoor ceiling. Long slopes
@@ -37,7 +40,9 @@ candidate_plane_tolerance_m: 0.05
 plane_max_rmse_m: 0.035
 
 # Recover continuous ramps while refusing steps and disconnected layers.
-max_ground_slope_deg: 25.0
+# Match the current-frame Terrain Guard so global and local traversability do
+# not disagree on 22-25 degree cells.
+max_ground_slope_deg: 22.0
 connect_radius_m: 0.25
 connection_plane_tolerance_m: 0.05
 connection_max_normal_delta_deg: 20.0

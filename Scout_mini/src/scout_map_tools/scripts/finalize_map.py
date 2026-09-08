@@ -74,6 +74,14 @@ def main():
         action="store_true",
         help="replace existing raw_camera_init.pcd from --source"
     )
+    parser.add_argument(
+        "--allow-capacity-limited",
+        action="store_true",
+        help=(
+            "developer-only recovery override: accept a mapper PCD whose "
+            "voxel capacity was exceeded"
+        ),
+    )
     terrain_group = parser.add_mutually_exclusive_group()
     terrain_group.add_argument(
         "--terrain",
@@ -155,6 +163,14 @@ def main():
     if not os.path.isfile(source_pcd):
         raise FileNotFoundError(
             "Filtered source PCD not found: " + source_pcd
+        )
+    capacity_marker = source_pcd + ".capacity_limited"
+    if os.path.isfile(capacity_marker) and not args.allow_capacity_limited:
+        raise RuntimeError(
+            "Mapper capacity was exceeded; refusing to finalize an incomplete "
+            "PCD. Inspect {}, raise dynamic_filter/max_voxels or "
+            "map/max_voxels, and remap. The developer-only recovery override "
+            "is --allow-capacity-limited.".format(capacity_marker)
         )
 
     if not os.path.isfile(raw_pcd) or args.replace_raw:
@@ -431,8 +447,8 @@ def main():
                     "traversed_path_map.pcd"
                     if traversed_path is not None else None
                 ),
-                "raw_map_yaml": "map_raw.yaml",
-                "nav_map_yaml": "map.yaml",
+                "nav_map_yaml": "map_raw.yaml",
+                "compatibility_map_yaml": "map.yaml",
                 "terrain_cost_map_yaml": "terrain_cost.yaml" if args.terrain else None,
                 "terrain_ground_pcd": "terrain_ground_map.pcd" if args.terrain else None,
                 "terrain_obstacle_pcd": "terrain_obstacles_map.pcd" if args.terrain else None,
@@ -510,7 +526,8 @@ def main():
         print("  public PCD : " + public_pcd)
         if traversed_path is not None:
             print("  free path  : " + traversed_path)
-        print("  nav map    : " + os.path.join(map_dir, "map.yaml"))
+        print("  nav map    : " + os.path.join(map_dir, "map_raw.yaml"))
+        print("  compat map : " + os.path.join(map_dir, "map.yaml"))
         if args.terrain:
             print("  slope costs: " + os.path.join(map_dir, "terrain_cost.yaml"))
             print("  2.5D map   : " + terrain_2p5d_yaml)

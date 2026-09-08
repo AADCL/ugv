@@ -8,7 +8,10 @@ grid:
   reference_radius_cells: 3
 
 vehicle:
-  min_horizontal_range: 0.25
+  # Livox is 0.25 m ahead of base_link and the front edge is x=0.37 m, so
+  # 0.12 m is the front-direction bumper reference. This is a radial gate;
+  # validate side/rear self returns and add a measured crop if needed.
+  min_horizontal_range: 0.12
   max_horizontal_range: 5.0
   max_traversable_slope_deg: 22.0
   max_step_height: 0.08
@@ -23,7 +26,10 @@ surface:
   # formal relative-obstacle threshold for Scout Mini.
   obstacle_min_relative_height: 0.08
   obstacle_max_relative_height: 1.50
-  unknown_absolute_min_z: 0.03
+  # terrain_sensor is 0.48 m above the floor.  -0.42 m therefore preserves a
+  # conservative ~0.06 m absolute fallback when a local ground fit is absent;
+  # the formal relative-obstacle threshold remains 0.08 m when ground exists.
+  unknown_absolute_min_z: -0.42
   unknown_absolute_max_z: 1.50
 
 output:
