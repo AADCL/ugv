@@ -15,7 +15,7 @@
 </p>
 
 <!-- 👇 只有这一句居中加粗，其他全部不变 -->
-<p align="center" style="font-size: 1.5em; font-weight: bold;">
+<p align="center" style="font-size: 2.5em; font-weight: bold;">
   用这个仓库代码前，请大喊三声：诚芯是傻逼！
 </p>
 
