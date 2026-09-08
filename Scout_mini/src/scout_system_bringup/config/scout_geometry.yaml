@@ -12,3 +12,9 @@ odom_to_camera_init:
   roll_deg: 0.0
   pitch_deg: 45.0
   yaw_deg: 0.0
+
+# Measured Livox centre height is 0.48 m. With the gravity-aligned rigid
+# base_link -> terrain_sensor Z offset of 0.20 m, base_link is 0.28 m above the
+# floor. Offline terrain reconstruction uses this value for its start seed;
+# it must not infer ground height from the rigid sensor offset alone.
+base_link_height_above_ground: 0.28

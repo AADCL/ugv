@@ -75,6 +75,7 @@
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>scout_2p5d_navigation</exec_depend>
   <exec_depend>scout_cloud_adapter</exec_depend>
+  <exec_depend>scout_terrain_filter</exec_depend>
 
 
   <!-- The export tag contains other, unspecified, tags -->

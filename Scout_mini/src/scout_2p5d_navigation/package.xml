@@ -8,8 +8,10 @@
 
   <buildtool_depend>catkin</buildtool_depend>
   <depend>costmap_2d</depend>
+  <depend>base_local_planner</depend>
   <depend>boost</depend>
   <depend>geometry_msgs</depend>
+  <depend>nav_core</depend>
   <depend>nav_msgs</depend>
   <depend>pcl_conversions</depend>
   <depend>pcl_ros</depend>
@@ -18,10 +20,12 @@
   <depend>sensor_msgs</depend>
   <depend>tf2</depend>
   <depend>tf2_geometry_msgs</depend>
+  <depend>tf2_ros</depend>
   <depend>visualization_msgs</depend>
   <build_depend>libyaml-cpp-dev</build_depend>
 
   <export>
     <costmap_2d plugin="${prefix}/scout_2p5d_plugins.xml" />
+    <nav_core plugin="${prefix}/scout_2p5d_plugins.xml" />
   </export>
 </package>

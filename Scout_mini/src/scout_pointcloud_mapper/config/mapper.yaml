@@ -1,5 +1,9 @@
 input_cloud: /cloud_registered
 input_odom: /Odometry
+# base_link pose in the final odom/map frame. It is saved as explicit traversed
+# free-space evidence and never participates in dynamic/static classification.
+trajectory_odom: /fastlio_odom
+trajectory_frame: odom
 static_scan_topic: /scout/static_scan
 static_map_topic: /scout/static_map_cloud
 dynamic_topic: /scout/dynamic_points
@@ -12,7 +16,9 @@ scan_voxel_size: 0.05
 
 radius_filter:
   enable: true
-  radius: 0.15
+  # Preserve grazing-angle ramp returns; temporal persistence below remains the
+  # authority for rejecting transient points.
+  radius: 0.20
   min_neighbors: 2
 
 # Coordinates are in the FAST-LIO body frame obtained from /Odometry.
@@ -28,35 +34,51 @@ self_filter:
 
 dynamic_filter:
   enable: true
-  # Lightweight 3D Bayesian occupancy grid. Hits raise occupancy confidence;
-  # rays that pass through a voxel lower it and remove departed objects.
-  # This coarse grid is not the output-map resolution.
+  # This is the only dynamic/static authority. Candidate voxels are never
+  # exported until they have enough persistent, positive observations.
   voxel_size: 0.20
-  hit_probability: 0.70
-  miss_probability: 0.40
-  occupied_probability: 0.72
+  hit_probability: 0.65
+  miss_probability: 0.30
+  occupied_probability: 0.75
   clearing_probability: 0.35
-  min_hit_scans: 8
+  # At a nominal 10 Hz cloud rate this requires a voxel to persist for about
+  # two seconds and be hit in most of those scans. A walking person normally
+  # cannot earn promotion, while a ramp cell does not need four seconds of
+  # dwell time from a moving vehicle.
+  min_hit_scans: 12
   min_observation_span: 2.0
-  # Trace one in every four filtered points to control Jetson CPU load.
-  ray_stride: 4
+  min_hit_ratio: 0.60
+  # Promotion and retention use different thresholds. Once a voxel has earned
+  # static status, intermittent sparse returns no longer invalidate its complete
+  # 5 cm generation. It is removed only after sustained, explicit free-space
+  # evidence satisfies both limits below.
+  min_clear_miss_scans: 8
+  min_clear_miss_span: 0.75
+  # Exact 3D voxel traversal is used for each selected ray. Start at stride 2
+  # on Jetson NX; bag replay must verify callback time before reducing to 1.
+  ray_stride: 2
   max_clearing_range: 20.0
-  ray_endpoint_margin: 0.30
-  candidate_timeout: 5.0
+  ray_endpoint_margin: 0.20
+  candidate_timeout: 3.0
   cleanup_period: 1.0
   max_voxels: 2000000
 
-# Confirmed points are accumulated in this independent fine grid. Keeping this
-# separate from dynamic_filter/voxel_size avoids regular holes in floors/walls.
+# Fine samples remain tied to a Bayesian generation. Demotion invalidates the
+# complete generation so stale geometry cannot reappear after later hits.
 map:
   voxel_size: 0.05
   max_voxels: 5000000
   autosave_period: 30.0
   save_on_shutdown: true
+  # At 20 Hz this preserves a continuous centre path without storing stationary
+  # duplicates. The PGM converter expands it only by the measured half width.
+  trajectory_min_distance: 0.05
 
 map_publish_period: 2.0
+# Debug cloud is optional and disabled during normal Jetson operation.
 publish_dynamic_points: false
 max_odom_age: 0.20
 
 # May be overridden by pointcloud_mapper.launch.
 output_path: /tmp/filtered_camera_init.pcd
+trajectory_output_path: /tmp/traversed_path_map.pcd

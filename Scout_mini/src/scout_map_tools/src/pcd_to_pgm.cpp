@@ -24,6 +24,7 @@ public:
         pnh_.param("classification_mode", classification_mode_, false);
         pnh_.param<std::string>("ground_pcd", ground_pcd_, "");
         pnh_.param<std::string>("obstacle_pcd", obstacle_pcd_, "");
+        pnh_.param<std::string>("free_evidence_pcd", free_evidence_pcd_, "");
 
         pnh_.param<double>("resolution", resolution_, 0.05);
         pnh_.param<double>("padding_m", padding_m_, 0.50);
@@ -32,6 +33,8 @@ public:
         pnh_.param<double>("obstacle_min_z", obstacle_min_z_, 0.05);
         pnh_.param<double>("obstacle_max_z", obstacle_max_z_, 1.20);
         pnh_.param<double>("free_dilation_m", free_dilation_m_, 0.10);
+        pnh_.param<double>("free_evidence_radius_m",
+                           free_evidence_radius_m_, 0.20);
         pnh_.param<double>("obstacle_inflation_m", obstacle_inflation_m_, 0.10);
         pnh_.param<double>("classified_obstacle/ground_search_radius_m",
                            classified_ground_search_radius_m_, 0.30);
@@ -67,6 +70,7 @@ public:
             classified_obstacle_max_relative_height_m_);
         classified_obstacle_min_points_per_cell_ = std::max(
             1, classified_obstacle_min_points_per_cell_);
+        free_evidence_radius_m_ = std::max(0.0, free_evidence_radius_m_);
 
         generate();
     }
@@ -109,6 +113,46 @@ private:
                 }
             }
         }
+    }
+
+    std::size_t mergeFreeEvidence(std::vector<uint8_t>* free_mask)
+    {
+        if (free_evidence_pcd_.empty())
+            return 0;
+
+        pcl::PointCloud<pcl::PointXYZI> evidence;
+        if (pcl::io::loadPCDFile<pcl::PointXYZI>(
+                free_evidence_pcd_, evidence) < 0)
+            throw std::runtime_error(
+                "Failed to load traversed free-space evidence PCD.");
+
+        std::vector<uint8_t> centre_mask(free_mask->size(), 0);
+        std::size_t accepted = 0;
+        for (const auto& p : evidence.points)
+        {
+            if (!std::isfinite(p.x) || !std::isfinite(p.y))
+                continue;
+            const int gx = static_cast<int>(
+                std::floor((p.x - min_x_) / resolution_));
+            const int gy = static_cast<int>(
+                std::floor((p.y - min_y_) / resolution_));
+            if (gx < 0 || gy < 0 || gx >= width_ || gy >= height_)
+                continue;
+            centre_mask[index(gx, gy)] = 1;
+            ++accepted;
+        }
+
+        std::vector<uint8_t> swept_mask;
+        const int radius = std::max(
+            0, static_cast<int>(std::round(
+                   free_evidence_radius_m_ / resolution_)));
+        dilate(centre_mask, swept_mask, radius);
+        for (std::size_t i = 0; i < free_mask->size(); ++i)
+            (*free_mask)[i] = (*free_mask)[i] || swept_mask[i];
+
+        ROS_INFO("Traversed free-space evidence: accepted=%zu/%zu radius=%.2fm",
+                 accepted, evidence.size(), free_evidence_radius_m_);
+        return accepted;
     }
 
     std::string basename(const std::string& path) const
@@ -251,6 +295,8 @@ private:
         std::vector<uint8_t> inflated_obstacle;
 
         dilate(floor_mask, free_mask, free_radius);
+        if (!terrain_cost_enable_)
+            mergeFreeEvidence(&free_mask);
         dilate(obstacle_mask, inflated_obstacle, obstacle_radius);
 
         std::vector<uint8_t> image(cell_count, 205);
@@ -417,6 +463,8 @@ private:
         std::vector<uint8_t> free_mask;
         std::vector<uint8_t> inflated_obstacle;
         dilate(floor_mask, free_mask, free_radius);
+        if (!terrain_cost_enable_)
+            mergeFreeEvidence(&free_mask);
         dilate(obstacle_mask, inflated_obstacle, obstacle_radius);
         std::vector<uint8_t> image(cell_count, terrain_cost_enable_ ? 255 : 205);
         if (terrain_cost_enable_)
@@ -550,6 +598,7 @@ private:
     std::string output_yaml_;
     std::string ground_pcd_;
     std::string obstacle_pcd_;
+    std::string free_evidence_pcd_;
     bool classification_mode_{false};
 
     double resolution_;
@@ -559,6 +608,7 @@ private:
     double obstacle_min_z_;
     double obstacle_max_z_;
     double free_dilation_m_;
+    double free_evidence_radius_m_;
     double obstacle_inflation_m_;
     double classified_ground_search_radius_m_;
     double classified_ground_height_percentile_;

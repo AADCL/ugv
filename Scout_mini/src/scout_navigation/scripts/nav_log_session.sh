@@ -33,7 +33,7 @@ if ! rosnode list 2>/dev/null | grep -qx '/move_base'; then
   echo "[NAV_LOG][WARN] /move_base is not currently visible. The bag will still start, but navigation data may be incomplete."
 fi
 
-# Standard global planning, slope cost, elevation-relative local obstacles and TEB.
+# Standard global planning, saved slope cost, current-frame terrain obstacles and TEB.
 TOPICS=(
   /tf
   /tf_static
@@ -73,8 +73,11 @@ TOPICS=(
   /terrain_2p5d/slope
   /cloud_registered_body
   /cloud_registered_terrain
-  /terrain/elevation_obstacle_points
-  /terrain/elevation_clearing_points
+  /terrain/patchwork_ground
+  /terrain/patchwork_nonground
+  /terrain/obstacle_points
+  /terrain/clearing_points
+  /terrain/status
 )
 
 finish_session() {
@@ -121,7 +124,7 @@ finish_session() {
 trap finish_session INT TERM EXIT
 
 echo "[NAV_LOG] run_dir=${RUN_DIR}"
-echo "[NAV_LOG] 2.5D + TEB navigation log enabled (including /cloud_registered_body)"
+echo "[NAV_LOG] 2.5D + current-frame terrain + TEB navigation log enabled"
 echo "[NAV_LOG] perform the test now; Ctrl+C this launch when finished"
 
 rosbag record --lz4 --split --size=2048 -O "${RUN_DIR}/navigation" "${TOPICS[@]}" &

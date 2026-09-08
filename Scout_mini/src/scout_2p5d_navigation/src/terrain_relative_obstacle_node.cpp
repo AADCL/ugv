@@ -162,7 +162,7 @@ class TerrainRelativeObstacleFilter {
   wt::TerrainMap terrain_;
   double min_range_ = 0.25;
   double max_range_ = 5.0;
-  double min_obstacle_height_ = 0.08;
+  double min_obstacle_height_ = 0.15;
   double max_obstacle_height_ = 1.50;
   double min_clearing_height_ = -0.25;
   double max_clearing_height_ = 2.00;

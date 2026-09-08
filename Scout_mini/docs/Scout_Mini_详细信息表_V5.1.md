@@ -1,6 +1,6 @@
-# Scout Mini 自主导航机器人详细信息表 V4.3
+# Scout Mini 自主导航机器人详细信息表 V5.1
 
-> 本表对应 2026-09-03 本地源码和 Scout 部署基线。当前正式架构为贝叶斯静态点、分类 PGM、保存高程坡度代价、实时高程相对障碍、GlobalPlanner 和 TEB。
+> 本表对应2026-09-08源码和Scout V5.1部署基线。正式架构为可逆贝叶斯静态点、轨迹自由证据、离线鲁棒地面重建、PGM静态占据、保存坡度软代价、当前帧Terrain Guard、GlobalPlanner、TEB和安全逃逸恢复。
 
 ## 1. 平台信息
 
@@ -19,7 +19,7 @@
 | 底盘里程计 | `/scout/odom` |
 | 底盘速度命令 | `/cmd_vel` |
 | 组织仓库 | `git@github.com:AADCL/ugv.git` |
-| 组织仓库 NX 克隆 | `/home/nrc19/github_upload/ugv_scout_wheeltech` |
+| 组织仓库车端克隆 | 以`git remote -v`与实机目录为准 |
 
 ## 2. 车体、外参与高度状态
 
@@ -41,6 +41,7 @@
 | 参数 | 当前值 | 状态 |
 |---|---:|---|
 | Patchwork++ `sensor_height` | `0.48 m` | 雷达中心绝对离地实测 |
+| `base_link`离地高度 | `0.28 m` | 0.48 m减去重力对齐刚性Z偏移0.20 m |
 | 轮胎总高 | `0.15 m` | 实测 |
 | 正式相对障碍下限 | `0.08 m` | 约为轮半径并向上取整 |
 
@@ -74,7 +75,7 @@ Scout 底盘 launch 必须设置 `pub_tf=false`。同一 TF 边出现两个发�
 
 | 模式 | 命令 | 是否包含底盘 | 说明 |
 |---|---|---:|---|
-| 建图 | `roslaunch scout_system_bringup scout_mapping.launch map_name:=NAME` | 是 | 唯一建图入口，同时保存完整与分类 PCD |
+| 建图 | `roslaunch scout_system_bringup scout_mapping.launch map_name:=NAME` | 是 | 唯一入口，默认保存贝叶斯静态PCD与车体轨迹 |
 | 地图最终生成 | `rosrun scout_map_tools finalize_map.py NAME` | 否 | 一次生成 PCD、PGM、2.5D 高程坡度资产 |
 | 重定位 | `roslaunch scout_system_bringup scout_localization.launch map_name:=NAME` | 是 | Livox、FAST-LIO、NDT、TF、底盘，持续运行 |
 | 正式导航层 | `roslaunch scout_navigation navigation_teb.launch map_name:=NAME` | 否 | 必须复用同名地图的定位入口 |
@@ -97,21 +98,13 @@ Scout 底盘 launch 必须设置 `pub_tf=false`。同一 TF 边出现两个发�
 /cloud_registered + /Odometry
   -> scout_pointcloud_mapper
      +-> 半径离群点过滤
-     +-> 3D 贝叶斯静态点判定
+     +-> 可逆3D贝叶斯静态点判定
      +-> /scout/static_scan
      +-> filtered_camera_init.pcd
-
-/scout/static_scan
-  -> scout_terrain_cloud_adapter -> /cloud_registered_terrain (terrain_sensor)
-  -> Patchwork++
-     +-> /terrain/patchwork_ground
-     +-> /terrain/patchwork_nonground
-  -> scout_terrain_map_accumulator
-     +-> terrain_ground_camera_init.pcd
-     +-> terrain_obstacles_camera_init.pcd
+/fastlio_odom -> traversed_path_map.pcd
 ```
 
-完整 PCD 和地形分类共用 `/scout/static_scan` 的贝叶斯静态判定。导航阶段则直接使用实时 `/cloud_registered_body`，以免移动障碍被建图期静态滤波丢弃。
+默认建图不启动Patchwork++与分类累积。需要旧链路诊断时使用`enable_online_terrain_diagnostics:=true`，但最终交付仍以贝叶斯静态PCD为唯一静态权威。
 
 ## 6. 地图最终生成流
 
@@ -119,9 +112,9 @@ Scout 底盘 launch 必须设置 `pub_tf=false`。同一 TF 边出现两个发�
 filtered_camera_init.pcd
   -> raw_camera_init.pcd
   -> public_map.pcd
-
-terrain_*_camera_init.pcd
-  -> terrain_*_map.pcd
+      + traversed_path_map.pcd
+  -> PMF保守种子 + 鲁棒局部平面连续生长
+  -> terrain_ground_map.pcd + terrain_obstacles_map.pcd
   +-> map_raw.pgm/yaml
   +-> map.pgm/yaml
   +-> terrain_cost.pgm/yaml
@@ -133,13 +126,13 @@ terrain_*_camera_init.pcd
 | `filtered_camera_init.pcd` | `camera_init` | mapper 最终完整 PCD |
 | `raw_camera_init.pcd` | `camera_init` | finalize 归档 |
 | `public_map.pcd` | `map` | NDT 定位 |
-| `terrain_ground_camera_init.pcd` | `camera_init` | 建图期分类累积 |
-| `terrain_obstacles_camera_init.pcd` | `camera_init` | 建图期分类累积 |
+| `traversed_path_map.pcd` | `map/odom` | 0.30 m半宽轨迹自由证据 |
+| `terrain_ground_candidates_map.pcd` | `map` | PMF与平面验证候选诊断 |
 | `terrain_ground_map.pcd` | `map` | PGM 和高程构建 |
 | `terrain_obstacles_map.pcd` | `map` | PGM 和高程障碍融合 |
 | `map_raw.yaml` | 2D OccupancyGrid | 正式导航静态层 |
 | `map.yaml` | 2D OccupancyGrid | 定位显示兼容 |
-| `terrain_2p5d.yaml` | 高程地图索引 | 地形服务、坡度层和在线相对障碍 |
+| `terrain_2p5d.yaml` | 高程地图索引 | 地形服务和全局坡度层 |
 | `terrain_cost.yaml` | 2D 诊断图 | 坡度/障碍可视化 |
 | `map_metadata.yaml` | YAML | 外参和地图生成参数快照 |
 
@@ -156,7 +149,8 @@ navigation_teb.launch（纯导航层）
 map_raw.yaml -> /nav_static_map -> global static layer
 terrain_2p5d.yaml -> TerrainCostmapLayer -> global slope cost
 /cloud_registered_body -> terrain_sensor
-  -> 保存高程相对障碍/清除点
+  -> Patchwork++当前帧ground/nonground
+  -> Terrain Guard障碍/清除点
   -> local obstacle layer
 GlobalPlanner -> TEB -> /cmd_vel
 ```
@@ -169,13 +163,14 @@ GlobalPlanner -> TEB -> /cmd_vel
 
 | 节点 | 模式 | 主要输入 | 主要输出 |
 |---|---|---|---|
-| `/laserMapping` | M/L/N | Livox 点云与 IMU | `/Odometry`、注册点云、FAST-LIO TF |
+| `/laserMapping` | M/L | Livox 点云与 IMU | `/Odometry`、注册点云、FAST-LIO TF；导航期间由L入口继续运行 |
 | Scout base 节点 | M/L/N | CAN、`/cmd_vel` | `/scout/odom` |
-| `/scout_pointcloud_mapper` | M | 注册点云、`/Odometry` | `/scout/static_scan`、完整 PCD |
-| `/scout_terrain_cloud_adapter` | M/N | M:静态扫描；N:实时 body 点云 | `/cloud_registered_terrain` |
-| `/scout_patchworkpp` | M | 重力对齐点云 | ground/nonground |
-| `/scout_terrain_guard` | M | 分类点 | 诊断、安全点云和状态 |
-| `/scout_terrain_map_accumulator` | M | ground/nonground、`/Odometry` | 两份分类 PCD |
+| `/scout_pointcloud_mapper` | M | 注册点云、`/Odometry`、`/fastlio_odom` | 静态扫描、静态PCD、轨迹PCD |
+| `/scout_terrain_cloud_adapter` | N | 实时body点云 | `/cloud_registered_terrain` |
+| `/scout_navigation_patchworkpp` | N | 重力对齐当前帧 | ground/nonground |
+| `/scout_navigation_terrain_guard` | N | 当前帧分类点 | obstacle/clearing与状态 |
+| `/scout_terrain_map_accumulator` | M诊断 | ground/nonground、`/Odometry` | 旧分类PCD |
+| `terrain_reclassify_node` | O | `public_map.pcd` | 候选、地面和障碍PCD |
 | `terrain_map_builder_node` | O | map 坐标分类 PCD | `terrain_2p5d.*` |
 | `/scout_geometry_tf_publisher` | M/L/N | 几何配置 | `odom -> camera_init` |
 | `/scout_tf_manager` | M/L/N | `extrinsics.yaml` | 静态车体 TF |
@@ -184,8 +179,8 @@ GlobalPlanner -> TEB -> /cmd_vel
 | Scout NDT localizer | L/N | 地图、实时点云、初值 | `map -> odom` |
 | `/scout_navigation_map_server` | N | `map_raw.yaml` | `/nav_static_map` |
 | `/scout_terrain_map_server` | N | `terrain_2p5d.yaml` | 高程、坡度、代价话题 |
-| `/scout_terrain_relative_obstacle_filter` | N | 实时点云、保存高程 | 在线 obstacle/clearing 点云 |
 | `/move_base` | N | 静态图、坡度、局部障碍、TF | 路径和 `/cmd_vel` |
+| `StartEscapeRecovery` | N | 全局/局部costmap、后向点云 | 仅安全条件满足时低速倒车 |
 | RealSense 节点 | C | D435i USB | RGB、深度、CameraInfo、TF |
 
 ## 9. 关键话题
@@ -199,31 +194,46 @@ GlobalPlanner -> TEB -> /cmd_vel
 | `/cloud_registered_body` | `sensor_msgs/PointCloud2` | FAST-LIO 当前 body 点云 |
 | `/cloud_registered_base` | `sensor_msgs/PointCloud2` | NDT 实时输入 |
 | `/scout/static_scan` | `sensor_msgs/PointCloud2` | 贝叶斯静态扫描，建图公共输入 |
+| `/scout/static_map_cloud` | `sensor_msgs/PointCloud2` | mapper累计静态图，latched发布 |
+| `/scout/dynamic_points` | `sensor_msgs/PointCloud2` | 可选动态候选调试，默认关闭 |
 | `/cloud_registered_terrain` | `sensor_msgs/PointCloud2` | 重力对齐地形点云 |
 | `/terrain/patchwork_ground` | `sensor_msgs/PointCloud2` | Patchwork++ 地面分类 |
 | `/terrain/patchwork_nonground` | `sensor_msgs/PointCloud2` | Patchwork++ 非地面分类 |
-| `/terrain/elevation_obstacle_points` | `sensor_msgs/PointCloud2` | 相对保存地面高 0.08-1.50 m |
-| `/terrain/elevation_clearing_points` | `sensor_msgs/PointCloud2` | local costmap 射线清除点 |
+| `/terrain/obstacle_points` | `sensor_msgs/PointCloud2` | 当前帧Terrain Guard marking点 |
+| `/terrain/clearing_points` | `sensor_msgs/PointCloud2` | 当前帧raytrace clearing点 |
+| `/terrain/status` | `diagnostic_msgs/DiagnosticArray` | 当前帧地形状态诊断 |
 | `/nav_static_map` | `nav_msgs/OccupancyGrid` | 正式全局静态图 |
-| `/terrain/elevation` | `nav_msgs/OccupancyGrid` | 高程可视化 |
-| `/terrain/slope` | `nav_msgs/OccupancyGrid` | 坡度可视化 |
-| `/terrain/traversability` | `nav_msgs/OccupancyGrid` | 通行代价可视化 |
+| `/terrain_2p5d/elevation_cloud` | `sensor_msgs/PointCloud2` | 保存高程点云可视化 |
+| `/terrain_2p5d/slope` | `nav_msgs/OccupancyGrid` | 保存坡度可视化 |
+| `/terrain_2p5d/traversability_cost` | `nav_msgs/OccupancyGrid` | 保存通行代价可视化 |
+| `/map_cloud` | `sensor_msgs/PointCloud2` | NDT使用的静态PCD，latched发布 |
+| `/initialpose` | `geometry_msgs/PoseWithCovarianceStamped` | RViz重定位初值 |
+| `/map_2d` | `nav_msgs/OccupancyGrid` | 定位入口的2D地图显示 |
 | `/scout/odom` | `nav_msgs/Odometry` | 底盘速度反馈 |
+| `/scout_status` | `scout_msgs/ScoutStatus` | 底盘基础状态 |
+| `/BMS_status` | `scout_msgs/ScoutBmsStatus` | BMS原始状态；不保证存在SOC百分比 |
+| `/rs_status` | `scout_msgs/ScoutRsStatus` | 遥控/控制状态 |
 | `/cmd_vel` | `geometry_msgs/Twist` | 底盘控制指令 |
+
+mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_mapper/reset_map`；诊断累积器启用时还提供`/scout_terrain_map_accumulator/save_map`与`reset_map`。`move_base`标准 action、规划服务以及动态参数话题由ROS Navigation插件自动提供，现场应以`rostopic list -v`和`rosservice list`快照为准。
 
 ## 10. 地图与障碍参数
 
-### 10.1 Patchwork++ 和分类累积
+### 10.1 贝叶斯静态判定、轨迹与当前帧地形
 
 | 参数 | 当前值 | 说明 |
 |---|---:|---|
 | `sensor_height` | `0.48 m` | 雷达中心绝对离地实测 |
 | Patchwork 最小/最大距离 | `0.25 / 12.0 m` | 单帧分割范围 |
-| 分类 PCD 体素 | `0.05 m` | 累积分辨率 |
-| 障碍最少帧 | `3` | 动态残影抑制 |
-| 最小观察跨度 | `0.4 s` | 动态残影抑制 |
+| 贝叶斯/精细体素 | `0.20 / 0.05 m` | 动静态权威/输出几何 |
+| 静态晋升 | `12次、2.0 s、命中率0.60` | 三条件同时满足 |
+| 静态撤销 | `8次自由射线、0.75 s` | 整个generation失效 |
+| hit/miss概率 | `0.65 / 0.30` | 占据与自由证据 |
+| occupied/clearing阈值 | `0.75 / 0.35` | 晋升与清除概率 |
+| 射线步长/距离 | `2 / 20 m` | 3D DDA，控制Jetson负载 |
+| 轨迹采样/自由半宽 | `0.05 / 0.30 m` | base_link中心轨迹/PGM扫掠走廊 |
 | 正式障碍相对高度 | `0.08-1.50 m` | 轮胎直径 0.15 m |
-| guard 障碍诊断下限 | `0.06 m` | 建图期保守诊断，不直接作为正式地图阈值 |
+| guard 障碍下限 | `0.08 m` | 导航当前帧正式阈值 |
 | guard 最大台阶参考 | `0.08 m` | 约轮半径 |
 
 ### 10.2 2.5D 高程坡度
@@ -238,6 +248,7 @@ GlobalPlanner -> TEB -> /cmd_vel
 | max slope | `25 deg` |
 | max soft slope cost | `80` |
 | obstacle relative height | `0.08-1.50 m` |
+| fuse static obstacles | `false` |
 
 坡度是软代价，不会简单把所有坡面设为墙。未知区仍由 PGM 保持未知/不可通行语义。
 
@@ -252,6 +263,9 @@ GlobalPlanner -> TEB -> /cmd_vel
 | TEB min obstacle distance | `0.15 m` | 保留 Scout 原值 |
 | footprint padding | `0.03 m` | 保留 Scout 原值 |
 | local costmap | `6 x 6 m`、`0.05 m/cell` | odom 滚动窗口 |
+| local observation | marking=`/terrain/obstacle_points`；clearing=`/terrain/clearing_points` | persistence=0 |
+| start escape | `0.05 m/s`、`0.30 m` | 仅安全门通过后运行 |
+| rear coverage box | X=`-1.05~-0.55 m`、半宽`0.36 m` | terrain_sensor坐标，需20点/0.25 s |
 
 ### 10.4 Scout TEB 运动参数
 
@@ -278,12 +292,15 @@ GlobalPlanner -> TEB -> /cmd_vel
 | Patchwork++ 接入 | `scout_terrain_filter/launch/scout_terrain_filter.launch` |
 | 分类点累积 | `scout_terrain_filter/src/terrain_map_accumulator_node.cpp` |
 | 地图最终生成 | `scout_map_tools/scripts/finalize_map.py` |
+| 离线地面重建 | `scout_map_tools/src/terrain_reclassify.cpp`、`config/terrain_reclassify.yaml` |
+| 旧分类静态门 | `scout_map_tools/src/pcd_static_gate.cpp`，只供兼容模式 |
 | PGM 生成 | `scout_map_tools/src/pcd_to_pgm.cpp` |
 | PGM 参数 | `scout_map_tools/config/scout_raw.yaml`、`scout_nav.yaml` |
 | 高程坡度构建 | `scout_2p5d_navigation/src/terrain_map_builder_node.cpp` |
 | 高程参数 | `scout_2p5d_navigation/config/terrain_builder.yaml` |
 | 坡度 costmap 插件 | `scout_2p5d_navigation/src/terrain_costmap_layer.cpp` |
-| 在线相对地面障碍 | `scout_2p5d_navigation/src/terrain_relative_obstacle_node.cpp` |
+| 当前帧地形障碍 | `scout_terrain_filter/src/terrain_guard_node.cpp` |
+| 起点安全逃逸 | `scout_2p5d_navigation/src/start_escape_recovery.cpp` |
 | 纯导航入口 | `scout_navigation/launch/navigation_teb.launch` |
 | 全局/局部 costmap | `scout_navigation/config/global_costmap_slope.yaml`、`local_costmap_slope.yaml` |
 | GlobalPlanner | `scout_navigation/config/global_planner_slope.yaml` |
@@ -296,20 +313,22 @@ GlobalPlanner -> TEB -> /cmd_vel
 | 现象 | 先检查 | 判断标准 |
 |---|---|---|
 | 地形分类全错 | `sensor_height`、`terrain_sensor` TF | 平地大多数近地回波进入 ground |
-| 建图两条结果不一致 | `terrain_input_topic` | 必须为 `/scout/static_scan` |
-| 人员残影明显 | 贝叶斯静态判定、障碍最少帧 | 人离开并复扫后应逐步清除 |
-| PGM 障碍缺失 | nonground PCD、0.08 m 阈值 | 先确认目标高于 Scout 可跨越阈值 |
+| 默认建图无Patchwork输出 | `enable_online_terrain_diagnostics` | false时正常，不影响最终地图 |
+| 人员残影明显 | 12次/2秒/60%晋升、8次/0.75秒清除 | 人离开并复扫后整代逐步清除 |
+| PGM 障碍缺失 | 离线重建PCD、0.08 m阈值 | 先确认目标高于Scout可跨越阈值 |
 | 全屋不可通行 | `terrain_2p5d` confidence、PGM unknown | 坡度层不能把未知变自由，也不应覆盖全图为 lethal |
 | 定位启动无 map TF | NDT 初值和 PCD | 收敛后才发布 `map -> odom` |
 | 导航一开定位消失 | `roslaunch --nodes` | 导航入口不应包含 NDT/FAST-LIO/底盘 |
 | 有路径不走 | `/cmd_vel`、`/scout/odom`、TEB、CAN | 逐段确认命令和反馈 |
-| 局部 costmap 被占满 | 相对障碍点与 terrain map_name | 实时点必须和同一保存地面比较 |
+| 局部costmap被占满 | 当前帧ground/nonground、TF、Terrain Guard | 不再检查保存terrain map_name |
+| 逃逸恢复拒绝 | 后向点数与时间、局部走廊 | 无新鲜后向覆盖时拒绝是正确行为 |
 | 狭窄通道仍拒绝 | footprint、padding、TEB 净空 | 10 cm 膨胀不会取消车体碰撞约束 |
 
 ## 13. 当前交付边界
 
 - 本地 Scout 代码、组织 Git 仓库与 `192.168.50.120` 部署保持同版；
 - 雷达中心离地 `0.48 m`、轮胎总高 `0.15 m`；
+- base_link离地`0.28 m`；轨迹自由走廊半宽`0.30 m`；
 - 不把 WheelTech 串口驱动、footprint、外参或速度参数带入 Scout；
 - 不上传地图、PCD、bag、日志或密钥；
 - 实车验证前必须在平地先确认 Patchwork++ ground/nonground 和 TF，再进行坡道测试。

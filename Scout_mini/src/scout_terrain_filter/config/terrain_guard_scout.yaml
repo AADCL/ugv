@@ -19,12 +19,15 @@ surface:
   min_step_neighbors: 2
   max_vertical_span: 0.12
   max_plane_rmse: 0.05
-  obstacle_min_relative_height: 0.06
+  # The measured 0.15 m wheel diameter gives a 0.075 m radius; 0.08 m is the
+  # formal relative-obstacle threshold for Scout Mini.
+  obstacle_min_relative_height: 0.08
   obstacle_max_relative_height: 1.50
   unknown_absolute_min_z: 0.03
   unknown_absolute_max_z: 1.50
 
 output:
   marking_z: 0.20
-  publish_debug_clouds: true
+  # Jetson normal operation publishes only obstacle/clearing/diagnostics.
+  publish_debug_clouds: false
   metrics_csv: ""

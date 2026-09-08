@@ -150,7 +150,7 @@ class TerrainGuard {
     pnh_.param("vehicle/max_horizontal_range", max_horizontal_range_, 5.0);
     pnh_.param("vehicle/max_traversable_slope_deg",
                 max_traversable_slope_deg_, 15.0);
-    pnh_.param("vehicle/max_step_height", max_step_height_, 0.08);
+    pnh_.param("vehicle/max_step_height", max_step_height_, 0.07);
 
     pnh_.param("surface/min_points_per_cell", min_points_per_cell_, 2);
     pnh_.param("surface/min_plane_cells", min_plane_cells_, 4);
@@ -158,14 +158,14 @@ class TerrainGuard {
     pnh_.param("surface/max_vertical_span", max_vertical_span_, 0.10);
     pnh_.param("surface/max_plane_rmse", max_plane_rmse_, 0.045);
     pnh_.param("surface/obstacle_min_relative_height",
-                obstacle_min_relative_height_, 0.06);
+                obstacle_min_relative_height_, 0.08);
     pnh_.param("surface/obstacle_max_relative_height",
                 obstacle_max_relative_height_, 1.50);
     pnh_.param("surface/unknown_absolute_min_z", unknown_absolute_min_z_, -0.35);
     pnh_.param("surface/unknown_absolute_max_z", unknown_absolute_max_z_, 1.50);
 
     pnh_.param("output/marking_z", marking_z_, 0.20);
-    pnh_.param("output/publish_debug_clouds", publish_debug_clouds_, true);
+    pnh_.param("output/publish_debug_clouds", publish_debug_clouds_, false);
     pnh_.param<std::string>("output/metrics_csv", metrics_csv_, "");
   }
 
@@ -564,18 +564,18 @@ class TerrainGuard {
   double min_horizontal_range_ = 0.25;
   double max_horizontal_range_ = 5.0;
   double max_traversable_slope_deg_ = 15.0;
-  double max_step_height_ = 0.08;
+  double max_step_height_ = 0.07;
   int min_points_per_cell_ = 2;
   int min_plane_cells_ = 4;
   int min_step_neighbors_ = 2;
   double max_vertical_span_ = 0.10;
   double max_plane_rmse_ = 0.045;
-  double obstacle_min_relative_height_ = 0.06;
+  double obstacle_min_relative_height_ = 0.08;
   double obstacle_max_relative_height_ = 1.50;
   double unknown_absolute_min_z_ = -0.35;
   double unknown_absolute_max_z_ = 1.50;
   double marking_z_ = 0.20;
-  bool publish_debug_clouds_ = true;
+  bool publish_debug_clouds_ = false;
   std::string metrics_csv_;
 
   int width_ = 0;

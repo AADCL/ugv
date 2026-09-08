@@ -15,10 +15,10 @@ plugins:
 obstacle_layer:
   enabled: true
   footprint_clearing_enabled: true
-  observation_sources: elevation_marking elevation_clearing
+  observation_sources: live_marking live_clearing
 
-  elevation_marking:
-    topic: /terrain/elevation_obstacle_points
+  live_marking:
+    topic: /terrain/obstacle_points
     sensor_frame: terrain_sensor
     data_type: PointCloud2
     marking: true
@@ -27,11 +27,12 @@ obstacle_layer:
     max_obstacle_height: 1.50
     obstacle_range: 4.0
     raytrace_range: 5.0
+    # Ten-hertz live sensing does not need historical point persistence.
     observation_persistence: 0.0
     expected_update_rate: 0.20
 
-  elevation_clearing:
-    topic: /terrain/elevation_clearing_points
+  live_clearing:
+    topic: /terrain/clearing_points
     sensor_frame: terrain_sensor
     data_type: PointCloud2
     marking: false
@@ -44,5 +45,7 @@ obstacle_layer:
     expected_update_rate: 0.20
 
 inflation_layer:
+  # Keep the established Scout Mini runtime envelope. Current-frame terrain
+  # sensing changes the obstacle source, not the validated chassis clearance.
   inflation_radius: 0.10
   cost_scaling_factor: 5.0

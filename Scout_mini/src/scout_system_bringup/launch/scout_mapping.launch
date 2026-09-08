@@ -1,7 +1,13 @@
 <launch>
 
   <arg name="map_name" default="current_mapping" />
-  <!-- Formal mapping shares the Bayesian-filtered scan with every map output. -->
+  <!-- Legacy Patchwork++ accumulation is diagnostic only. The default offline
+       terrain builder now works directly from the Bayesian static PCD. -->
+  <arg name="enable_online_terrain_diagnostics" default="false" />
+  <!--
+    Terrain mapping shares the Bayesian-filtered scan with the static PCD.
+    Diagnostic fallback only: terrain_input_topic:=/cloud_registered_body
+  -->
   <arg name="terrain_input_topic" default="/scout/static_scan" />
 
   <!-- 1. Mid-360 -->
@@ -23,23 +29,30 @@
   <!-- 5. odom -> base_link 发布为 /fastlio_odom -->
   <include file="$(find scout_pose_adapter)/launch/pose_adapter.launch" />
 
-  <!-- 6. Scout Mini 普通轮 -->
+  <!-- 6. Scout Mini CAN chassis. Wheel odometry is a velocity source only. -->
   <include file="$(find scout_bringup)/launch/scout_mini_robot_base.launch">
     <arg name="odom_topic_name" value="/scout/odom" />
     <arg name="pub_tf" value="false" />
   </include>
 
-  <!-- 7. PGM and elevation maps use the same static-point decision as the PCD. -->
-  <include file="$(find scout_cloud_adapter)/launch/cloud_adapter.launch">
+  <!-- 7. Optional online Patchwork++ diagnostics / legacy classified PCDs. -->
+  <include file="$(find scout_cloud_adapter)/launch/cloud_adapter.launch"
+           if="$(arg enable_online_terrain_diagnostics)">
     <arg name="node_name" value="scout_terrain_cloud_adapter" />
     <arg name="input_topic" value="$(arg terrain_input_topic)" />
     <arg name="output_topic" value="/cloud_registered_terrain" />
     <arg name="target_frame" value="terrain_sensor" />
   </include>
 
-  <include file="$(find scout_terrain_filter)/launch/scout_terrain_filter.launch" />
+  <include file="$(find scout_terrain_filter)/launch/scout_terrain_filter.launch"
+           if="$(arg enable_online_terrain_diagnostics)">
+    <!-- The accumulator consumes Patchwork++ directly. The terrain guard is a
+         diagnostic branch and is disabled in deliverable maps. -->
+    <arg name="enable_guard" value="false" />
+  </include>
 
-  <include file="$(find scout_terrain_filter)/launch/terrain_map_accumulator.launch">
+  <include file="$(find scout_terrain_filter)/launch/terrain_map_accumulator.launch"
+           if="$(arg enable_online_terrain_diagnostics)">
     <arg name="map_name" value="$(arg map_name)" />
   </include>
 

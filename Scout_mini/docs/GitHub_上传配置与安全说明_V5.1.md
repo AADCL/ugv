@@ -1,4 +1,4 @@
-# Scout Mini GitHub 上传配置与安全说明 V4.3
+# Scout Mini GitHub 上传配置与安全说明 V5.1
 
 > 本文件只记录非敏感配置和标准流程。不得写入设备登录密码、私钥正文、GitHub Token、Cookie 或带认证信息的 URL。
 

@@ -9,6 +9,7 @@ find_package(catkin REQUIRED COMPONENTS
   pcl_ros
   roscpp
   sensor_msgs
+  std_msgs
   std_srvs
 )
 find_package(PCL REQUIRED COMPONENTS common filters io)

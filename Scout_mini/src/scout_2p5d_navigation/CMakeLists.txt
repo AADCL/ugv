@@ -4,8 +4,9 @@ project(scout_2p5d_navigation)
 add_compile_options(-std=c++14 -O2 -Wall -Wextra)
 
 find_package(catkin REQUIRED COMPONENTS
-  costmap_2d geometry_msgs nav_msgs pcl_conversions pcl_ros
-  pluginlib roscpp sensor_msgs tf2 tf2_geometry_msgs visualization_msgs)
+  base_local_planner costmap_2d geometry_msgs nav_core nav_msgs
+  pcl_conversions pcl_ros pluginlib roscpp sensor_msgs tf2
+  tf2_geometry_msgs tf2_ros visualization_msgs)
 find_package(PCL REQUIRED COMPONENTS common io)
 find_package(yaml-cpp REQUIRED)
 find_package(Boost REQUIRED COMPONENTS filesystem system)
@@ -13,14 +14,17 @@ find_package(Boost REQUIRED COMPONENTS filesystem system)
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES scout_terrain_map scout_2p5d_plugins
-  CATKIN_DEPENDS costmap_2d geometry_msgs nav_msgs pluginlib roscpp)
+  CATKIN_DEPENDS base_local_planner costmap_2d geometry_msgs nav_core nav_msgs
+  pluginlib roscpp tf2_ros)
 
 include_directories(include ${catkin_INCLUDE_DIRS} ${PCL_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS})
 
 add_library(scout_terrain_map src/terrain_map.cpp)
 target_link_libraries(scout_terrain_map ${catkin_LIBRARIES} ${Boost_LIBRARIES} yaml-cpp)
 
-add_library(scout_2p5d_plugins src/terrain_costmap_layer.cpp)
+add_library(scout_2p5d_plugins
+  src/terrain_costmap_layer.cpp
+  src/start_escape_recovery.cpp)
 target_link_libraries(scout_2p5d_plugins scout_terrain_map ${catkin_LIBRARIES})
 
 add_executable(terrain_map_builder_node src/terrain_map_builder_node.cpp)

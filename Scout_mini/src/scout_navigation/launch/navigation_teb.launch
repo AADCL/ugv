@@ -12,21 +12,22 @@
     not included here, so this launch cannot replace their running nodes.
   -->
 
-  <!-- Live cloud is compared against the saved elevation surface. -->
+  <!-- Transform the live cloud into the terrain sensor frame. -->
   <include file="$(find scout_cloud_adapter)/launch/cloud_adapter.launch">
     <arg name="node_name" value="scout_terrain_cloud_adapter" />
     <arg name="output_topic" value="/cloud_registered_terrain" />
     <arg name="target_frame" value="terrain_sensor" />
   </include>
-  <node pkg="scout_2p5d_navigation" type="terrain_relative_obstacle_node"
-        name="scout_terrain_relative_obstacle_filter" output="screen">
-    <rosparam command="load"
-              file="$(find scout_2p5d_navigation)/config/terrain_relative_obstacle.yaml" />
-    <param name="terrain_map_yaml" value="$(arg terrain_map_yaml)" />
-    <remap from="cloud" to="/cloud_registered_terrain" />
-    <remap from="obstacles" to="/terrain/elevation_obstacle_points" />
-    <remap from="clearing" to="/terrain/elevation_clearing_points" />
-  </node>
+
+  <!-- Local collision sensing must not depend on localization or the saved
+       elevation map. Patchwork++ estimates the current ground directly in the
+       sensor frame and the guard publishes live obstacle/clearing clouds. -->
+  <include file="$(find scout_terrain_filter)/launch/scout_terrain_filter.launch">
+    <arg name="input_cloud" value="/cloud_registered_terrain" />
+    <arg name="enable_guard" value="true" />
+    <arg name="patchwork_node_name" value="scout_navigation_patchworkpp" />
+    <arg name="guard_node_name" value="scout_navigation_terrain_guard" />
+  </include>
 
   <!-- PGM remains available for RViz and 2D compatibility. -->
   <node pkg="map_server" type="map_server" name="scout_navigation_map_server"

@@ -8,6 +8,10 @@ obstacle_min_z: 0.05
 obstacle_max_z: 1.20
 
 free_dilation_m: 0.10
+# Conservative swept corridor around the physically traversed base-link path.
+# Scout Mini half width is about 0.295 m; use 0.30 m and do not include the
+# runtime costmap padding here.
+free_evidence_radius_m: 0.30
 obstacle_inflation_m: 0.00
 
 # Only nonground points supported by nearby ground and within this relative
@@ -16,4 +20,4 @@ classified_obstacle/ground_search_radius_m: 0.30
 classified_ground/height_percentile: 0.20
 classified_obstacle/min_relative_height_m: 0.08
 classified_obstacle/max_relative_height_m: 1.50
-classified_obstacle/min_points_per_cell: 1
+classified_obstacle/min_points_per_cell: 2

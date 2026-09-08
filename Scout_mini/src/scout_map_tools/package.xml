@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="2">
   <name>scout_map_tools</name>
-  <version>0.0.0</version>
-  <description>The scout_map_tools package</description>
+  <version>0.1.0</version>
+  <description>Finalizes Bayesian Scout point-cloud maps into 3D, 2D and 2.5D assets.</description>
 
   <!-- One maintainer tag required, multiple allowed, one person per tag -->
   <!-- Example:  -->
@@ -13,7 +13,7 @@
   <!-- One license tag required, multiple allowed, one license per tag -->
   <!-- Commonly used license strings: -->
   <!--   BSD, MIT, Boost Software License, GPLv2, GPLv3, LGPLv2.1, LGPLv3 -->
-  <license>TODO</license>
+  <license>BSD-3-Clause</license>
 
 
   <!-- Url tags are optional, but multiple are allowed, one per tag -->
@@ -61,6 +61,7 @@
   <exec_depend>rospy</exec_depend>
   <exec_depend>std_srvs</exec_depend>
   <exec_depend>scout_2p5d_navigation</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
 
 
   <!-- The export tag contains other, unspecified, tags -->
