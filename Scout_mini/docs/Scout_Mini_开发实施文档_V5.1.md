@@ -561,3 +561,34 @@ history_length: 1.0
 先静态验证`/scout/fused_odom`的frame/stamp/非零协方差、原始话题频率，以及tf树未增加任何边。当前系统已经运行时只启动一次独立fusion.launch，不重启底盘或定位。检查`/scout/fusion/status`，正常应为SHADOW_OK_NOT_NAVIGATION；它是数据健康状态，不是定位精度保证。
 
 动态验收在现场人员控制下执行直行、转弯、倒车，按共同时间窗计算两路及融合的相对刚体运动；不能把轮速累计pose直接当同原点真值。回放必须使用独立ROS master，禁止将历史/cmd_vel或/initialpose重放到实车master。回滚时停止两个融合节点，并在下一次建图/定位启动时设置`enable_shadow_fusion:=false`；旧链路和原始数据无需修改。
+
+## 18. 无NDT实车对比脚本
+
+| 相对src的文件 | 实现 |
+|---|---|
+| `scout_system_bringup/scripts/scout_fusion_test.py` | ROS图预检查；旧节点存在则退出码2拒绝，不杀节点；启动独立进程组的测试launch；Ctrl+C等待退出 |
+| `scout_system_bringup/launch/scout_fusion_test.launch` | 独立硬件/FAST-LIO/TF/轮速/融合/比较链，无地图、NDT、Navigation；PCD保存保持false |
+| `scout_odom_fusion/scripts/compare_odometry.py` | 三路时间缓冲、位置线性插值＋四元数SLERP、共同时间起点SE(3)对齐、差异统计、CSV/JSON/PNG |
+| `scout_odom_fusion/test/test_compare.py` | 非零原点与90度朝向对齐、插值、正负180度跨界、禁止外推和跨长断流 |
+| 两个包的`CMakeLists.txt`/`package.xml` | 安装脚本，声明rosgraph/rosnode和numpy/scipy/matplotlib依赖，注册比较测试 |
+
+```bash
+sudo apt-get install python3-numpy python3-scipy python3-matplotlib
+cd ~/livox_fastlio
+source devel/setup.bash
+catkin_make -j1 --pkg scout_odom_fusion scout_system_bringup
+source devel/setup.bash
+python3 src/scout_odom_fusion/test/test_compare.py
+roslaunch --nodes scout_system_bringup scout_fusion_test.launch
+rosrun scout_system_bringup scout_fusion_test.py --check-only
+# 实车停车并退出旧链路后：
+rosrun scout_system_bringup scout_fusion_test.py
+```
+
+节点列表不得出现scout_global_localizer、move_base或map_server。启动前检查发现冲突退出是预期行为，不应为了绕过检查改节点名。检查不能消除另一个操作者同时启动节点的竞态，现场需保持唯一操作者。
+
+比较输入固定参考点base_link，lio/fused要求odom世界帧；wheel允许odom/scout_odom且帧不可中途变化。保留header时间，不晚于0.50秒、不超前0.05秒；重复和乱序不纳入缓冲。每路最多300条，用共同最新时刻减20 ms作为采样点，插值跨度不能超过0.20秒，不外推；结果约10 Hz，终端1 Hz。原点取同一时刻三路各自位姿，完整相对变换后比较水平XY与包裹到正负180度的yaw。
+
+运行后单路断流超过0.50秒、相邻平移超过`0.30+2*dt`米或转角超过`0.20+3*dt`弧度会锁止比较并保留失效原因。明显轮速000重置必须分新会话，不能用于同一条参考轨迹；小于门限的重置无法保证检测。没有独立真值时禁止把RMS参考差标为绝对定位精度。
+
+Ubuntu20.04 SciPy1.3使用from_dcm/as_dcm，脚本同时兼容新版本from_matrix/as_matrix，不要求升级Jetson系统SciPy。图像保存用无界面Agg后端，不依赖桌面环境。脚本只订阅Odometry、写诊断文件，不发布TF/里程计/cmd_vel。

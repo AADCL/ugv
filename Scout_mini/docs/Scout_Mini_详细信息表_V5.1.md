@@ -408,3 +408,23 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 | 数据仍在但不是fused_odom | 是否订阅内部ekf_raw | 只用受保护的/scout/fused_odom进行比较 |
 | 初始化位置不是000 | 与/fastlio_odom的绝对位姿比较 | 正常，保留LIO odom原点；轮速只融合vx |
 | 节点重复启动 | 建图/定位入口已有默认include | 不额外启动独立fusion.launch；需要禁用用enable_shadow_fusion:=false |
+
+## 无NDT实车测试入口与结果
+
+| 项目 | 值 |
+|---|---|
+| 推荐命令 | `rosrun scout_system_bringup scout_fusion_test.py` |
+| 只检查不启动 | 同命令添加`--check-only`；存在旧节点返回2 |
+| 内部launch | `scout_system_bringup/scout_fusion_test.launch`；不要绕过启动冲突检查 |
+| 新节点 | `/scout_odom_comparison`，只订阅不发布ROS话题或TF |
+| 输入 | `/scout/odom`、`/fastlio_odom`、`/scout/fused_odom`，nav_msgs/Odometry |
+| 对齐 | 同一header时刻插值，各自共同起点SE(3)归一化，保留前左上 |
+| 输出频率 | 终端1 Hz、CSV约10 Hz，无新增TF |
+| 数据目录 | `~/livox_fastlio/logs/fusion_tests/<时间_随机后缀>/` |
+| 文件 | samples.csv、summary.json、comparison.png；不默认录bag |
+| 对比指标 | 相对XYZ/yaw、净水平位移、累计水平路程、相对轮速XY/yaw差、最大/RMS参考差 |
+| 图形 | 三路XY、三路相对航向、LIO/融合对轮速位置差；最多最近20000点 |
+| READY | 三路获得共同有效时间点，初始化起点，之后可人工运动 |
+| INVALID | 断流、帧错或明显源重置，停止更新比较，不自动发停车指令 |
+
+测试链TF仍为odom→camera_init→body→base_link及原静态传感器边，没有map→odom发布者。无NDT、map_server、Navigation或地图文件依赖。脚本不控制CAN接口上线，需保留原CAN配置；底盘驱动仍只输出轮速而不发布odom→base_link。

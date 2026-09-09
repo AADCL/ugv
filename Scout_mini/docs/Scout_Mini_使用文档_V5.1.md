@@ -339,3 +339,31 @@ rostopic hz /scout/fused_odom
 出现错误坐标、明显LIO跳变或运行后任一数据源/EKF超过0.50秒未更新时，`/scout/fused_odom`停止发布，状态为ERROR。恢复需先确认源数据正常，再停止并重启整个`fusion.launch`（两个融合节点一起），不能只重启guard；不会自动重置或修改原定位节点。此保护仅控制融合输出，不会给底盘发停车指令，也不会停止原导航。
 
 `SHADOW_OK_NOT_NAVIGATION`仅表示数据链路有效，不代表已验证定位精度。当前为松耦合旁路试验，不能修复FAST-LIO内部或NDT错误更新。日志入口自动增加融合输出、输入与状态；对比时先截取共同时间段，再计算同一base_link参考点的相对运动，不直接拿轮速启动归零的位置与odom绝对位置作差。
+
+## 真车无NDT一键对比测试
+
+先停车，退出原建图、定位、导航和独立fusion.launch。保留CAN接口正常配置，现场持急停。执行：
+
+```bash
+source ~/livox_fastlio/devel/setup.bash
+rosrun scout_system_bringup scout_fusion_test.py
+```
+
+脚本检查ROS节点冲突；发现旧底盘、FAST-LIO、NDT、导航或融合节点时拒绝启动，不杀旧节点。新测试只启动Livox、FAST-LIO、Scout底盘、TF管理、pose adapter、融合与对比，无NDT、map_server、Navigation，不保存PCD、不自动开车。不要绕过脚本直接启动同名测试launch。
+
+等待终端`[COMPARE] READY`，再保持静止约10秒，然后人工遥控直行、停车、转弯或返回。终端每秒输出wheel/lio/fused三行：`dx/dy`为共同起点车体坐标下相对位移，`yaw`为相对航向，`net`为起终点水平直线距离，`path`为采样累计水平路程。`dXY/wheel`和`dYaw/wheel`是相对轮速的差异，不是真实定位误差；累计路程包含静止噪声，航向显示限制在正负180度。
+
+停车后Ctrl+C，脚本退出自己启动的测试链路并保存：
+
+```text
+~/livox_fastlio/logs/fusion_tests/<日期_时间_唯一后缀>/
+  samples.csv       同时间戳的三路相对轨迹和差异，约10 Hz
+  summary.json      最后结果、最大/RMS差异、拒绝样本数和失效原因
+  comparison.png    XY轨迹、相对航向、相对轮速位置差三图
+```
+
+每次自动创建新目录，不覆盖旧结果；CSV持续刷新，正常退出生成汇总和图片。突然断电可能缺少最后数据、汇总和图片。该入口默认不录bag，需要原始记录时另用现有导航日志记录入口（无move_base会提示但可继续录制）；本CSV并非完整原始ROS消息。图片最多显示最近20000个对齐样本，CSV保留完整会话。
+
+比较按同一时刻插值并分别计算`T_start^-1 * T_current`，完整三维旋转参与转换，不直接相减不同原点。出现断流、明显归零跳变或frame变化时显示INVALID并停止累计，不自动拼接新原点；此时只保存故障前有效结果，不会发送车辆停止指令，应由现场人员停车并重启测试。
+
+若只想观察已经运行的三路里程计而不启动任何硬件，可单独执行`rosrun scout_odom_fusion compare_odometry.py`，但必须自行确认没有重复对比节点；这不能保证当前系统中NDT已关闭。`scout_fusion_test.py --check-only`只执行启动前检查，不启动硬件。

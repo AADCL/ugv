@@ -160,6 +160,7 @@ include_directories(
 #   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 # )
 catkin_install_python(PROGRAMS
+  scripts/scout_fusion_test.py
   scripts/map_bundle_guard.py
   scripts/scout_mapping_session.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
