@@ -75,10 +75,9 @@ Scout 底盘 launch 必须设置 `pub_tf=false`。同一 TF 边出现两个发�
 
 | 模式 | 命令 | 是否包含底盘 | 说明 |
 |---|---|---:|---|
-| 推荐一键建图会话 | `rosrun scout_system_bringup scout_mapping_session.py NAME` | 是 | 启动、零速停车、显式保存、停launch、finalize及产物检查 |
-| 建图底层launch | `roslaunch scout_system_bringup scout_mapping.launch map_name:=NAME` | 是 | 唯一底层链；仅开发调试，退出后需手动finalize |
+| 正式一键建图 | `roslaunch scout_system_bringup scout_mapping.launch map_name:=NAME` | 是 | 与轮趣一致；停车Ctrl+C后等待PCD保存，随后单独finalize |
 | 建图兼容别名 | `roslaunch scout_system_bringup scout_system.launch map_name:=NAME` | 是 | 只include上述V5.1入口，不再保留旧FAST-LIO直连链 |
-| 地图手动恢复 | `rosrun scout_map_tools finalize_map.py NAME --replace-raw` | 否 | 自动收尾失败或重建时生成PCD、PGM、2.5D资产 |
+| 地图最终生成 | `rosrun scout_map_tools finalize_map.py NAME` | 否 | 每次采集完成后执行；确认替换同名旧地图时才加`--replace-raw` |
 | 重定位 | `roslaunch scout_system_bringup scout_localization.launch map_name:=NAME` | 是 | Livox、FAST-LIO、NDT、TF、底盘，持续运行 |
 | 正式导航层 | `roslaunch scout_navigation navigation_teb.launch map_name:=NAME` | 否 | 必须复用同名地图的定位入口 |
 | 全局规划测试 | `roslaunch scout_navigation global_planning_test.launch map_name:=NAME` | 否 | 屏蔽实际速度输出 |
@@ -270,7 +269,7 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 | 离线网格硬限制 | `100 m / 2,000,000 cells` | 远端XY离群点触发明确失败，避免Jetson OOM |
 | mapper容量硬限制 | `2,000,000 / 5,000,000 voxels` | 超限写`.capacity_limited`并拒绝正式finalize |
 | 地图收尾事务标志 | `.finalization_incomplete` | finalize开始时原子写入，完整校验通过后才删除；定位/导航守卫持续拒绝该目录 |
-| mapper恢复检查点 | `120 s` | 同步磁盘保存；正式结束仍以会话脚本显式保存为准 |
+| mapper恢复检查点 | `120 s` | 同步磁盘保存；正式结束在mapper正常退出时再次保存 |
 | 全图调试发布 | `2 s（仅有订阅者时）` | 无RViz订阅时不遍历/序列化整张精细点云 |
 | 失效精细体素清理 | `10 s` | 与全图发布解耦，候选generation过期后仍回收内存 |
 
@@ -338,7 +337,7 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 | PGM 生成 | `scout_map_tools/src/pcd_to_pgm.cpp` |
 | PGM 参数 | `scout_map_tools/config/scout_raw.yaml`、`scout_nav.yaml` |
 | 高程坡度构建 | `scout_2p5d_navigation/src/terrain_map_builder_node.cpp` |
-| 一键建图监督 | `scout_system_bringup/scripts/scout_mapping_session.py` |
+| 旧会话监督（兼容工具） | `scout_system_bringup/scripts/scout_mapping_session.py`，不再作为正式入口 |
 | 高程参数 | `scout_2p5d_navigation/config/terrain_builder.yaml` |
 | 坡度 costmap 插件 | `scout_2p5d_navigation/src/terrain_costmap_layer.cpp` |
 | 当前帧地形障碍 | `scout_terrain_filter/src/terrain_guard_node.cpp` |

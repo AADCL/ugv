@@ -1,4 +1,7 @@
 <launch>
+  <!-- Operator entry, matching WheelTech: roslaunch with map_name:=NAME.
+       Stop the vehicle, press Ctrl+C and wait for mapper shutdown saving.
+       Then run: rosrun scout_map_tools finalize_map.py NAME -->
 
   <arg name="map_name" default="current_mapping" />
   <!-- Legacy Patchwork++ accumulation is diagnostic only. The default offline

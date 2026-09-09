@@ -32,7 +32,7 @@ map_raw 静态占据 -------------------------------+
 约束如下：
 
 - FAST-LIO 输入不变，任何过滤点云都不能回灌 FAST-LIO。
-- `scout_mapping.launch`是唯一底层建图链；操作员使用`scout_mapping_session.py`单命令入口，默认维护贝叶斯静态PCD和车体轨迹并在退出后从同一静态点源统一生成分类PCD、PGM和高程坡度。
+- `scout_mapping.launch`是正式一键入口，与轮趣相同；采集结束停车并Ctrl+C，等待贝叶斯静态PCD和车体轨迹保存完成，再执行`finalize_map.py NAME`生成分类PCD、PGM和高程坡度。
 - `scout_localization.launch` 与 `navigation_teb.launch` 职责分离。导航入口不启动 Livox、FAST-LIO、NDT 或 Scout 底盘。
 - PGM 仍决定墙体、固定障碍和未知区；坡度层只给已知自由格增加代价，不能把未知格改成自由格。
 - 正式导航使用 GlobalPlanner + TEB。DWA 和旧 TerrainGlobalPlanner 不进入当前代码树。
@@ -139,7 +139,7 @@ sensor_height: 0.48
 
 该值是Livox中心到地面的实测垂直高度。它与`base_link -> body`的刚体`z=0.20 m`含义不同。由两者得到`base_link_height_above_ground=0.28 m`，必须写在`scout_geometry.yaml`，供离线地面种子使用。轮胎实测总高为`0.15 m`，对应半径约`0.075 m`。
 
-## 6. 统一建图入口与一键会话
+## 6. 统一建图入口（与轮趣一致）
 
 打开 `scout_system_bringup/launch/scout_mapping.launch`。它必须一次启动：
 
@@ -160,13 +160,13 @@ sensor_height: 0.48
 
 历史入口`scout_system.launch`保留为兼容别名，但其内部只能include`scout_mapping.launch`并透传`map_name`和诊断开关，不能再直接include上游`mapping_mid360.launch`。这样旧操作命令也不会绕过mapper、pose adapter或统一TF链。
 
-交付给操作人员的推荐入口是`scout_system_bringup/scripts/scout_mapping_session.py`：
+交付给操作人员的正式入口是`scout_system_bringup/launch/scout_mapping.launch`：
 
 ```bash
-rosrun scout_system_bringup scout_mapping_session.py factory_a
+roslaunch scout_system_bringup scout_mapping.launch map_name:=factory_a
 ```
 
-该脚本启动上述底层launch；用户停车、释放遥控/teleop并按一次`Ctrl+C`后，脚本以20 Hz持续发布零速，显式调用mapper保存服务，确认成功后停止launch，最后调用`finalize_map.py --replace-raw`并校验全部PCD、三套PGM/YAML、元数据及六层2.5D文件的尺寸和引用。不能把finalize节点直接塞进普通XML launch的shutdown回调，因为roslaunch会并发终止mapper和后处理节点，存在PCD尚未落盘就读取的竞态。新增脚本后必须同步修改`scout_system_bringup/CMakeLists.txt`与`package.xml`，声明`rospy`、`geometry_msgs`、`std_srvs`、`python3-yaml`和`roslaunch`运行依赖。
+操作顺序与轮趣一致：用户停车、释放遥控/teleop并按一次`Ctrl+C`，等待mapper正常退出保存，再执行第8节的finalize。launch已包含点云处理、TF、里程计和底盘，不需要另行启动过滤器。旧`scripts/scout_mapping_session.py`保留为可选兼容监督工具，仍由CMake安装，但不是正式入口；其20 Hz零速保持和自动finalize仅在显式运行旧脚本时生效。正常launch不会自动执行地图转换，也不能把转换节点放进并发shutdown流程读取尚未保存完成的PCD。
 
 ## 7. 可逆贝叶斯地图与轨迹证据
 
@@ -187,7 +187,7 @@ filtered_camera_init.pcd
 traversed_path_map.pcd
 ```
 
-`publish_dynamic_points=false`保持默认，避免Jetson调试带宽。`self_filter=false`保持默认，直到实测车体包围盒确认。崩溃恢复自动保存周期为120秒；正式结束由会话脚本显式保存。`/scout/static_map_cloud`只有存在订阅者时才重建整图，headless建图不再每2秒遍历和序列化全部精细体素。
+`publish_dynamic_points=false`保持默认，避免Jetson调试带宽。`self_filter=false`保持默认，直到实测车体包围盒确认。崩溃恢复自动保存周期为120秒；正式结束由mapper正常退出时保存。`/scout/static_map_cloud`只有存在订阅者时才重建整图，headless建图不再每2秒遍历和序列化全部精细体素。
 
 需要回归旧在线分类时，显式运行：
 
@@ -200,10 +200,10 @@ roslaunch scout_system_bringup scout_mapping.launch \
 
 ## 8. 地图最终生成
 
-一键会话入口会自动执行本节。仅在底层launch调试、自动收尾失败或从已有PCD恢复时手动运行：
+每次建图采集结束、确认mapper保存和launch退出后，都执行本节，与轮趣一致：
 
 ```bash
-rosrun scout_map_tools finalize_map.py factory_a --replace-raw
+rosrun scout_map_tools finalize_map.py factory_a
 ```
 
 脚本顺序如下：
@@ -368,7 +368,7 @@ roslaunch --nodes scout_navigation navigation_teb.launch map_name:=check_map
 
 ```bash
 rosrun scout_bringup bringup_can2usb.bash
-rosrun scout_system_bringup scout_mapping_session.py factory_a
+roslaunch scout_system_bringup scout_mapping.launch map_name:=factory_a
 ```
 
 ```bash
@@ -377,7 +377,7 @@ rostopic hz /scout/static_scan
 rostopic hz /fastlio_odom
 ```
 
-车辆停稳并释放遥控/teleop后按一次`Ctrl+C`，等待`[DONE] finalized map`。此时原始、定位、PGM和2.5D资产应已全部生成。默认不会生成在线累积分类PCD，这是V5.1预期行为。
+车辆停稳并释放遥控/teleop后按一次`Ctrl+C`，等待mapper保存PCD、轨迹和launch完全退出。随后执行`rosrun scout_map_tools finalize_map.py factory_a`，看到`[DONE] map finalized`后才检查全部资产。默认不会生成在线累积分类PCD。
 
 ### 14.2 检查资产（手动命令仅作恢复）
 
@@ -429,8 +429,8 @@ rosparam get /move_base/recovery_behaviors
 
 ## 15. 验收清单
 
-- [ ] `scout_mapping.launch` 是唯一底层建图链，交付入口为会话脚本。
-- [ ] 操作员使用`scout_mapping_session.py NAME`，一次Ctrl+C后按保存、停机、finalize顺序完成。
+- [ ] `scout_mapping.launch` 是正式一键建图入口，与轮趣保持一致。
+- [ ] 操作员停车Ctrl+C后等待保存和launch退出，再单独执行`finalize_map.py NAME`。
 - [ ] mapper保存`filtered_camera_init.pcd`与`traversed_path_map.pcd`。
 - [ ] mapper体素容量超限时保存服务和finalize均明确拒绝正式交付。
 - [ ] finalize执行期间/失败后保留`.finalization_incomplete`，只有全套资产校验通过才删除。

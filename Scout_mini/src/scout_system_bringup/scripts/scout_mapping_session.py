@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run one Scout mapping session and finalize it in a safe order."""
+"""Optional legacy supervisor; the operator entry is scout_mapping.launch."""
 
 import argparse
 import os

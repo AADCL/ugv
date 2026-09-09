@@ -12,7 +12,7 @@ Scout Mini 项目运行于 Ubuntu 20.04 / ROS Noetic，硬件包括 AgileX Scout
 - 导航局部障碍改为当前帧Patchwork++与Terrain Guard输出，不再查询保存高程，避免定位修正导致局部障碍漂移；
 - 增加可选`StartEscapeRecovery`，完成实车后向覆盖验证前默认关闭；启用后也只有全局起点确定为致命占据、局部倒车走廊无碰撞且雷达后方覆盖新鲜时才允许0.05 m/s低速逃逸；
 - 新增明确的`base_link_height_above_ground=0.28 m`，离线地面种子不再误用0.20 m刚性雷达Z偏移。
-- 新增`scout_mapping_session.py`单命令会话入口，在Ctrl+C后先保持零速并显式保存，再停launch、自动生成和校验全部地图资产；
+- 正式入口与轮趣一致：`roslaunch scout_system_bringup scout_mapping.launch map_name:=NAME`，停车退出并保存后执行`finalize_map.py NAME`；旧会话脚本仅保留兼容；
 - 当前帧感知最小水平半径为0.12 m（只在正前方约对应车头边界），无参考低障碍保守兜底，地面平面拟合失败时不允许清空costmap；
 - 离线和当前帧最大可通行坡度统一为22度，并为mapper与离线稠密网格增加Jetson容量硬门；
 - 按已确认需求将PGM建图膨胀设为0.15 m，已正常工作的move_base/TEB参数保持不变；
@@ -34,7 +34,7 @@ Scout Mini 项目运行于 Ubuntu 20.04 / ROS Noetic，硬件包括 AgileX Scout
 ## 数据流
 
 ```text
-建图（推荐入口 scout_mapping_session.py；底层 scout_mapping.launch）
+建图（正式入口 scout_mapping.launch）
 Mid-360 -> FAST-LIO -> /cloud_registered
                          |
                          +-> 可逆贝叶斯静态点 -> filtered_camera_init.pcd
@@ -94,8 +94,11 @@ Jetson 默认使用 `-j1`，避免内存压力和包间并行编译竞态。
 # CAN
 rosrun scout_bringup bringup_can2usb.bash
 
-# 1. 一键建图；车辆停稳后按一次Ctrl+C，自动保存并生成全部地图资产
-rosrun scout_system_bringup scout_mapping_session.py factory_a
+# 1. 一键建图；车辆停稳后按一次Ctrl+C，等待PCD保存和launch退出
+roslaunch scout_system_bringup scout_mapping.launch map_name:=factory_a
+
+# 采集结束后生成地图，与轮趣相同
+rosrun scout_map_tools finalize_map.py factory_a
 
 # 2. 重定位，保持该终端持续运行
 roslaunch scout_system_bringup scout_localization.launch map_name:=factory_a

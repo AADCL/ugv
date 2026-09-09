@@ -33,21 +33,21 @@ rosrun scout_bringup bringup_can2usb.bash
 ip -details link show can0
 ```
 
-### 2.2 推荐的一键建图会话入口
-
-```bash
-rosrun scout_system_bringup scout_mapping_session.py factory_a
-```
-
-这一个命令负责启动完整建图链；路线完成后在同一终端按一次`Ctrl+C`，它会严格按“调用mapper保存服务 -> 停止全部launch节点 -> 运行地图收尾 -> 检查关键产物”的顺序执行。不要再启动另一套2.5D建图launch。
-
-底层运行入口仍是：
+### 2.2 一键建图入口（与轮趣一致）
 
 ```bash
 roslaunch scout_system_bringup scout_mapping.launch map_name:=factory_a
 ```
 
-它用于开发调试，不负责在退出后自动收尾。默认建图链启动：
+这个命令启动完整建图链。完成采集后停车，在同一终端按一次`Ctrl+C`，等待mapper退出保存完成，再按第3节生成地图。与轮趣一致，地图采集和最终转换分两步执行。
+
+需要排查在线地形分类时，使用同一个入口并显式打开诊断开关：
+
+```bash
+roslaunch scout_system_bringup scout_mapping.launch map_name:=factory_a enable_online_terrain_diagnostics:=true
+```
+
+诊断开关日常保持关闭。默认建图链启动：
 
 - Livox 与 FAST-LIO；
 - Scout CAN 底盘；
@@ -55,7 +55,7 @@ roslaunch scout_system_bringup scout_mapping.launch map_name:=factory_a
 - `/fastlio_odom`车体中心轨迹保存；
 - TF和pose adapter。
 
-Patchwork++在线分类默认关闭，最终PGM和2.5D由会话入口调用`finalize_map.py`，从同一贝叶斯静态PCD统一重建。启动约2秒后`/scout/static_scan`趋于稳定属于正常现象。
+Patchwork++在线分类默认关闭，最终PGM和2.5D在采集结束后通过`finalize_map.py`从同一贝叶斯静态PCD统一重建。启动约2秒后`/scout/static_scan`趋于稳定属于正常现象。
 
 ### 2.3 建图中检查
 
@@ -74,11 +74,11 @@ rostopic echo -n 1 /scout/dynamic_points   # 仅手动打开调试发布时
 - 坡道和平地连接处要完整覆盖，避免高程图边缘成为未知区；
 - 地图名称不要包含空格或斜杠。
 
-### 2.4 停止、保存与自动收尾
+### 2.4 停止与保存
 
-在会话终端按一次`Ctrl+C`，直到看到`[DONE] finalized map`再退出SSH或断电。不要对会话或roslaunch执行`kill -9`。脚本先显式调用`/scout_pointcloud_mapper/save_map`，确认成功后才停止建图节点，因此不会让finalize与mapper析构保存互相竞争。
+车辆完全停稳并释放遥控/teleop后，在建图终端按一次`Ctrl+C`，等待mapper保存完成、roslaunch退出。正常退出会保存`filtered_camera_init.pcd`和`traversed_path_map.pcd`；检查终端没有保存失败或超时强制终止提示，再执行第3节转换。不要使用`kill -9`，也不要在保存期间执行finalize。
 
-最终应直接生成：
+执行第3节转换成功后，完整产物应为：
 
 ```text
 /home/nvidia/livox_fastlio/maps/factory_a/
@@ -102,19 +102,19 @@ rostopic echo -n 1 /scout/dynamic_points   # 仅手动打开调试发布时
 └── map_metadata.yaml
 ```
 
-若地图目录中仍存在 `.finalization_incomplete`，表示该次收尾未完整成功；即使目录中已有部分PCD、PGM或高程文件，这张地图也不可用于重定位、导航或交付。先根据会话终端的首个错误排查，重新完成自动收尾或手动`finalize_map.py`，并确认该标志已消失。
+若地图目录中仍存在 `.finalization_incomplete`，表示该次转换未完整成功；即使目录中已有部分PCD、PGM或高程文件，这张地图也不可用于重定位、导航或交付。根据finalize终端的首个错误排查，重新执行`finalize_map.py`，并确认该标志已消失。
 
-日常不需要手动调用保存服务或finalize命令。
+日常不需要手动调用保存服务；采集结束后必须执行一次finalize。旧`scout_mapping_session.py`仅保留兼容，不再作为推荐入口。
 
-## 3. 手动恢复或重新生成地图资产
+## 3. 生成地图资产
 
-只有曾用底层`scout_mapping.launch`、自动收尾失败，或需要从已保存PCD重新生成资产时，才手动运行：
+等待建图launch退出后执行，与轮趣相同：
 
 ```bash
-rosrun scout_map_tools finalize_map.py factory_a --replace-raw
+rosrun scout_map_tools finalize_map.py factory_a
 ```
 
-随后检查：
+等待`[DONE] map finalized`后检查。若同名目录已有不同的归档raw，工具会拒绝混用；只有确定替换该地图时才追加`--replace-raw`。
 
 ```bash
 MAP_DIR=/home/nvidia/livox_fastlio/maps/factory_a
@@ -295,5 +295,5 @@ roslaunch scout_navigation nav_logging.launch \
 1. 取消或停止发送导航目标；
 2. 停止 `navigation_teb.launch`；
 3. 停止 `scout_localization.launch`；
-4. 建图模式等待会话入口显示`[DONE] finalized map`；
+4. 建图模式等待mapper保存及launch退出，再执行finalize并等待`[DONE] map finalized`；
 5. 最后关闭 CAN 和整车电源。
