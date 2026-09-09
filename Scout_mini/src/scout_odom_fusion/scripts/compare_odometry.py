@@ -37,7 +37,7 @@ def interpolate(samples, stamp, max_gap=.20):
     alpha = (stamp-a[0])/(b[0]-a[0])
     out = np.eye(4)
     out[:3,3] = (1-alpha)*a[1][:3,3] + alpha*b[1][:3,3]
-    out[:3,:3] = rotation_matrix(Slerp([0.,1.], rotation_from_matrix(np.stack([a[1][:3,:3], b[1][:3,:3]])))(alpha))
+    out[:3,:3] = rotation_matrix(Slerp([0.,1.], rotation_from_matrix(np.stack([a[1][:3,:3], b[1][:3,:3]])))([alpha]))[0]
     return out
 
 
