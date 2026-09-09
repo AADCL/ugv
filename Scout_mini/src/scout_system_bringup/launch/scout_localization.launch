@@ -1,4 +1,6 @@
 <launch>
+  <arg name="enable_shadow_fusion" default="true" />
+  <include if="$(arg enable_shadow_fusion)" file="$(find scout_odom_fusion)/launch/fusion.launch" />
 
 	<arg name="map_name" default="scout_map_01" />
 

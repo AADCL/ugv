@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>scout_odom_fusion</name>
+  <version>0.1.0</version>
+  <description>Shadow FAST-LIO pose and Scout forward-speed EKF with input guards.</description>
+  <maintainer email="nvidia@todo.todo">Scout maintainers</maintainer>
+  <license>BSD-3-Clause</license>
+  <buildtool_depend>catkin</buildtool_depend>
+  <depend>rospy</depend>
+  <depend>nav_msgs</depend>
+  <depend>diagnostic_msgs</depend>
+  <exec_depend>robot_localization</exec_depend>
+  <exec_depend>roslaunch</exec_depend>
+</package>

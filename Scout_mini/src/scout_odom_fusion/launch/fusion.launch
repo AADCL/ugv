@@ -1,0 +1,12 @@
+<launch>
+  <!-- Shadow mode only: neither node publishes TF or controls navigation. -->
+  <node pkg="robot_localization" type="ekf_localization_node"
+        name="scout_shadow_ekf" output="screen">
+    <rosparam command="load" file="$(find scout_odom_fusion)/config/ekf.yaml" />
+    <remap from="odometry/filtered" to="/scout/fusion/ekf_raw" />
+  </node>
+  <node pkg="scout_odom_fusion" type="fusion_guard.py"
+        name="scout_fusion_guard" output="screen">
+    <rosparam command="load" file="$(find scout_odom_fusion)/config/guard.yaml" />
+  </node>
+</launch>

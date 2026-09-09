@@ -377,3 +377,34 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 - 不把 WheelTech 串口驱动、footprint、外参或速度参数带入 Scout；
 - 不上传地图、PCD、bag、日志或密钥；
 - 实车验证前必须在平地先确认 Patchwork++ ground/nonground 和 TF，再进行坡道测试。
+
+## 旁路融合新增信息（2026-09-09）
+
+| 入口/节点 | 职责 | TF |
+|---|---|---|
+| `scout_odom_fusion/fusion.launch` | 独立启动两节点；建图/定位入口默认include，参数enable_shadow_fusion | 不发布 |
+| `/scout_shadow_ekf` | robot_localization EKF，20 Hz，3D位姿＋车体vx | publish_tf=false |
+| `/scout_fusion_guard` | 原始输入校验、时序截取、协方差赋值、输出有效性与诊断 | 不发布 |
+
+| 话题 | 类型 | 发布者 → 订阅者 | 帧/字段 |
+|---|---|---|---|
+| `/scout/odom` | nav_msgs/Odometry | scout_base_node → guard及原消费者 | 原样保留；仅取base_link的vx，累计pose归零不影响融合 |
+| `/fastlio_odom` | nav_msgs/Odometry | scout_pose_adapter → guard及原消费者 | odom/base_link；仅使用XYZ/RPY，不使用零twist |
+| `/Odometry` | nav_msgs/Odometry | laserMapping → 原消费者 | camera_init/body；保留，不直接输入EKF |
+| `/scout/fusion/lio_input` | nav_msgs/Odometry | guard → EKF、日志 | odom/base_link；真实采样时间；显式位姿协方差 |
+| `/scout/fusion/wheel_input` | nav_msgs/Odometry | guard → EKF、日志 | 仅车体vx有效；pose是未使用占位，不可用于画轨迹 |
+| `/scout/fusion/ekf_raw` | nav_msgs/Odometry | EKF → guard | 内部预测输出，断流时仍可能存在，不供业务使用 |
+| `/scout/fused_odom` | nav_msgs/Odometry | guard → 日志/人工比较 | odom/base_link，约20 Hz，不接NDT/导航 |
+| `/scout/fusion/status` | diagnostic_msgs/DiagnosticArray | guard → 日志/监测 | 约1 Hz，WAITING/SHADOW_OK/ERROR及拒绝计数 |
+| `/diagnostics` | diagnostic_msgs/DiagnosticArray | EKF及其他诊断节点 → 监测工具 | EKF自身诊断；不替代guard输出有效性状态 |
+
+新融合没有新增TF边，原TF树和唯一发布者不变。轮速和融合的位置原点不同，虽然可能同标odom也不能直接相减；只对齐同时间窗下base_link的相对运动。前X、左Y、上Z，正yaw为逆时针，倒车速度为负。
+
+| 故障 | 检查 | 处理 |
+|---|---|---|
+| 无融合输出、WAITING | 原话题、header帧、时间戳、EKF是否首先收到LIO位姿 | 等待两路有效输入；检查robot_localization依赖 |
+| LIO frame错误 | 是否误接原始/Odometry | 恢复/fastlio_odom；禁止直接修改frame标签 |
+| 断流/时钟回跳/LIO重置ERROR | status原因、源频率、消息年龄 | 修复源后重启整个fusion.launch；旧导航不受guard停止影响 |
+| 数据仍在但不是fused_odom | 是否订阅内部ekf_raw | 只用受保护的/scout/fused_odom进行比较 |
+| 初始化位置不是000 | 与/fastlio_odom的绝对位姿比较 | 正常，保留LIO odom原点；轮速只融合vx |
+| 节点重复启动 | 建图/定位入口已有默认include | 不额外启动独立fusion.launch；需要禁用用enable_shadow_fusion:=false |

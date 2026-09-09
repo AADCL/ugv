@@ -15,13 +15,14 @@ Scout Mini 项目运行于 Ubuntu 20.04 / ROS Noetic，硬件包括 AgileX Scout
 - 正式入口与轮趣一致：`roslaunch scout_system_bringup scout_mapping.launch map_name:=NAME`，停车退出并保存后执行`finalize_map.py NAME`；旧会话脚本仅保留兼容；
 - 当前帧感知最小水平半径为0.12 m（只在正前方约对应车头边界），无参考低障碍保守兜底，地面平面拟合失败时不允许清空costmap；
 - 离线和当前帧最大可通行坡度统一为22度，并为mapper与离线稠密网格增加Jetson容量硬门；
-- 按已确认需求将PGM建图膨胀设为0.15 m，已正常工作的move_base/TEB参数保持不变；
+- 2026-09-09起，新PGM离线膨胀0.10 m，TEB角速度0.40 rad/s、角加速度0.30 rad/s²、软距离0.20 m；既有地图需重新生成才改变离线膨胀；
 - finalize全过程由`.finalization_incomplete`标志保护，定位和导航入口常驻地图guard，拒绝未完成、截断或缺文件的地图包。
 
 ## 当前功能
 
 - Scout CAN 通信、`/cmd_vel` 控制和 `/scout/odom` 轮速里程计；
 - Livox Mid-360 与 FAST-LIO 激光惯性里程计；
+- 新增FAST-LIO位姿＋Scout前向轮速的旁路EKF，发布`/scout/fused_odom`，保留旧话题与TF；建图/定位入口自动启动，尚不接管导航，详见三大文档的旁路融合章节；
 - 半径滤波、三维贝叶斯静态点判定和动态人员残影清除；
 - 单一建图入口保存贝叶斯静态PCD和车体轨迹，收尾工具统一生成分类PCD、PGM和2.5D高程坡度资产；
 - NDT-OMP 全局重定位与唯一 `map -> odom` 发布；

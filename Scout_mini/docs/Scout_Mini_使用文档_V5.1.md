@@ -316,3 +316,26 @@ roslaunch scout_navigation nav_logging.launch \
 3. 停止 `scout_localization.launch`；
 4. 建图模式等待mapper保存及launch退出，再执行finalize并等待`[DONE] map finalized`；
 5. 最后关闭 CAN 和整车电源。
+
+## 旁路融合里程计（2026-09-09）
+
+`scout_mapping.launch`与`scout_localization.launch`默认增加`scout_odom_fusion`，不改旧话题、不发布TF、不向NDT或导航回灌。两种入口不能同时启动；`navigation_teb.launch`不重复启动融合。需要关闭时给建图/定位入口添加`enable_shadow_fusion:=false`。
+
+原有系统已经启动时，可以单独运行一次：
+
+```bash
+source ~/livox_fastlio/devel/setup.bash
+roslaunch scout_odom_fusion fusion.launch
+rostopic echo -n 1 /scout/fusion/status
+rostopic hz /scout/fused_odom
+```
+
+新输出`/scout/fused_odom`为`nav_msgs/Odometry`，`header.frame_id=odom`、`child_frame_id=base_link`，约20 Hz。原有`/scout/odom`、`/Odometry`、`/fastlio_odom`全部保留。坐标遵循前X、左Y、上Z，绕Z逆时针为正；不交换XY或翻转Y。
+
+融合保留FAST-LIO的odom世界原点，不以融合节点启动位置重新归零。轮速只使用base_link下的前向速度，不使用其累计XYZ/航向，因此底盘驱动重启时位置归零不会把融合位置拉回000。底盘速度正负号保留，倒车为负；转弯时增大轮速观测方差，不融合未经验证的轮速角速度。
+
+数据按原始header时间戳进入EKF：仅接收启动后新到且不旧于0.30秒的有效样本；相同时间戳不重复融合，乱序/未来超过0.05秒的样本拒绝。异步数据由EKF时间队列与1秒历史回滚处理，不要求把20 Hz位姿强行配成50 Hz轮速。原始`/Odometry`在camera_init/body下，不能直接替换输入；现有TF适配器已完成odom/base_link刚体转换。它的速度字段是填零的，不参与融合。
+
+出现错误坐标、明显LIO跳变或运行后任一数据源/EKF超过0.50秒未更新时，`/scout/fused_odom`停止发布，状态为ERROR。恢复需先确认源数据正常，再停止并重启整个`fusion.launch`（两个融合节点一起），不能只重启guard；不会自动重置或修改原定位节点。此保护仅控制融合输出，不会给底盘发停车指令，也不会停止原导航。
+
+`SHADOW_OK_NOT_NAVIGATION`仅表示数据链路有效，不代表已验证定位精度。当前为松耦合旁路试验，不能修复FAST-LIO内部或NDT错误更新。日志入口自动增加融合输出、输入与状态；对比时先截取共同时间段，再计算同一base_link参考点的相对运动，不直接拿轮速启动归零的位置与odom绝对位置作差。

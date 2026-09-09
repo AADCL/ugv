@@ -55,6 +55,7 @@
   <exec_depend>scout_bringup</exec_depend>
   <exec_depend>scout_tf_manager</exec_depend>
   <exec_depend>scout_pose_adapter</exec_depend>
+  <exec_depend>scout_odom_fusion</exec_depend>
   <exec_depend>scout_cloud_adapter</exec_depend>
   <exec_depend>scout_pointcloud_mapper</exec_depend>
   <exec_depend>scout_terrain_filter</exec_depend>

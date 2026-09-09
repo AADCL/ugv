@@ -1,4 +1,6 @@
 <launch>
+  <arg name="enable_shadow_fusion" default="true" />
+  <include if="$(arg enable_shadow_fusion)" file="$(find scout_odom_fusion)/launch/fusion.launch" />
   <!-- Operator entry, matching WheelTech: roslaunch with map_name:=NAME.
        Stop the vehicle, press Ctrl+C and wait for mapper shutdown saving.
        Then run: rosrun scout_map_tools finalize_map.py NAME -->

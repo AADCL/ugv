@@ -42,6 +42,10 @@ TOPICS=(
   /scout/odom
   /Odometry
   /fastlio_odom
+  /scout/fused_odom
+  /scout/fusion/status
+  /scout/fusion/lio_input
+  /scout/fusion/wheel_input
   /move_base_simple/goal
   /move_base/status
   /move_base/goal

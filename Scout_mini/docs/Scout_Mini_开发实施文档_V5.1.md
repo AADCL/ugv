@@ -489,3 +489,75 @@ rosparam get /move_base/recovery_behaviors
 组织仓库为`git@github.com:AADCL/ugv.git`。Scout车端克隆目录以`git remote -v`实机确认；只同步`Scout_mini/`和必要的仓库根README，不提交地图、PCD、bag、日志、密钥、`build/`或`devel/`。
 
 本版本允许部署到 Scout 车端。先完成编译和静态话题检查；任何车辆移动测试仍需提前告知现场人员。
+
+## 17. FAST-LIO与轮速旁路融合开发
+
+目标：保留全部旧输出，新增`/scout/fused_odom`供记录比较。以成熟的`robot_localization` EKF为融合核心，不自制位置加权平均。输出仍处于FAST-LIO的odom世界原点，以base_link为车体参考点；不发布TF，不替换NDT、TEB、地图轨迹采集的输入。
+
+### 17.1 依赖、文件和编译顺序
+
+以下路径相对`~/livox_fastlio/src`。把仓库中完整功能包放入工作空间，不只复制一个脚本。
+
+| 文件 | 开发内容与责任 |
+|---|---|
+| `scout_odom_fusion/package.xml` | 声明rospy、nav_msgs、diagnostic_msgs和robot_localization依赖 |
+| `scout_odom_fusion/CMakeLists.txt` | 安装Python节点、config、launch，注册单元测试 |
+| `scout_odom_fusion/scripts/fusion_guard.py` | 输入帧/时间/数值校验，协方差赋值，EKF初始化顺序、输出有效性、断流锁止和状态发布 |
+| `scout_odom_fusion/config/ekf.yaml` | 20 Hz三维EKF；LIO选择XYZ/RPY，轮速只选择vx；禁用TF和relative/differential归零 |
+| `scout_odom_fusion/config/guard.yaml` | 明确输入话题、帧、时效、跳变门限及观测方差 |
+| `scout_odom_fusion/launch/fusion.launch` | 启动`scout_shadow_ekf`与`scout_fusion_guard`，只输出新话题 |
+| `scout_odom_fusion/test/test_guard.py` | 时间窗、四元数、重复样本、原点保留、轮速000重置、负速度、异常帧、LIO跳变和断流输出测试 |
+| `scout_system_bringup/launch/scout_mapping.launch` | 添加默认true的enable_shadow_fusion参数和fusion.launch include |
+| `scout_system_bringup/launch/scout_localization.launch` | 同上；导航入口不再重复include |
+| `scout_system_bringup/package.xml` | 添加scout_odom_fusion运行依赖 |
+| `scout_navigation/scripts/nav_log_session.sh` | TOPICS数组添加融合输出、状态及两路预处理输入 |
+
+```bash
+sudo apt-get install ros-noetic-robot-localization
+cd ~/livox_fastlio
+source /opt/ros/noetic/setup.bash
+catkin_make -j1 --pkg scout_odom_fusion
+source devel/setup.bash
+python3 src/scout_odom_fusion/test/test_guard.py
+python3 src/scout_odom_fusion/test/test_isolated_ekf.py
+roslaunch --dump-params scout_odom_fusion fusion.launch
+```
+
+新环境须先按本文前面的逐包索引完成全部上游包构建。只更新本包Python/YAML无需重编C++；首次新增包需运行catkin以生成可执行入口。车端采用ROS Noetic robot_localization 2.7.7。
+
+`test_isolated_ekf.py`自动使用独立11431端口ROS master，验证非零起点、90度车头朝向时vx转为世界Y运动、LIO延迟80 ms、轮速pose中途归零、输出单调时间戳、无TF及断流停止。端口占用时拒绝运行；不向实车master发布合成数据，测试结束自动关闭测试进程。此测试不等于实车精度验收。
+
+### 17.2 坐标与观测契约
+
+FAST-LIO原始camera_init/body位姿经现有TF适配器转换为odom/base_link，再送入guard。guard严格校验这两个frame，错误输入拒绝，不通过“改frame_id标签”冒充坐标转换。轮速Odometry的twist按ROS语义位于child_frame_id，本版必须为base_link且前左上。轮速世界原点和pose完全不参与融合；不需要估计其000原点与FAST-LIO原点的偏移，也不重复融合由轮速积分来的位置。
+
+EKF必须先收到有效LIO位姿并输出接近该位姿的初始解，guard才放行轮速，防止轮速先到导致滤波器初始化在000。输出不人为归零，不发布新odom到base_link TF。EKF状态选择按x/y/z/roll/pitch/yaw/vx/vy/vz/vroll/vpitch/vyaw/ax/ay/az顺序：
+
+```yaml
+odom0_config: [true, true, true, true, true, true,
+               false, false, false, false, false, false, false, false, false]
+odom1_config: [false, false, false, false, false, false,
+               true, false, false, false, false, false, false, false, false]
+publish_tf: false
+two_d_mode: false
+smooth_lagged_data: true
+history_length: 1.0
+```
+
+保留三维姿态以兼容现有坡道，不把车体速度当成odom世界X速度。EKF根据车体姿态将前向速度映射到世界坐标。不是紧耦合，不回写FAST-LIO内部状态；不引入NDT反馈或同源IMU的重复观测。
+
+### 17.3 时间截取、噪声及故障边界
+
+- header时间戳保留，不换成接收时间；重复/乱序、超过0.30秒或未来超过0.05秒的样本拒绝，EKF用1秒历史处理两路异步延迟。
+- LIO位姿方差初值`[0.01,0.01,0.04,0.0025,0.0025,0.0025]`，单位依次为m²和rad²；为调试假设，非标定精度，不把原适配器零协方差解释为完美观测。
+- 轮速vx方差0.0025 (m/s)²；转向乘数`min(25,1+(abs(omega)/0.30)^2)`，只降权vx，不将omega送入EKF。这不是完整打滑检测。
+- 数值有效性门限：速度绝对值不超过2 m/s、角速度不超过3 rad/s；仅用于拒绝数据，不改底盘运动限速。
+- LIO相邻位姿允许平移`0.30+2*dt`米、旋转`0.20+3*dt`弧度，超过门限或间隔超过0.50秒锁止输出。小于门限的源重置无法保证被识别，重启LIO时必须同时重启融合。
+- 正常开始发布后，任一路或EKF断流超过0.50秒锁止；同时检查ROS时间和墙钟，/clock停止也不能无限假预测。时钟回跳同样锁止。修复源后重启整个融合launch，不能仅恢复guard而保留旧EKF状态。
+- 该保护只关闭新输出，绝不停止原导航或发送cmd_vel；原导航/NDT输入保持不变。
+
+### 17.4 验证和回滚
+
+先静态验证`/scout/fused_odom`的frame/stamp/非零协方差、原始话题频率，以及tf树未增加任何边。当前系统已经运行时只启动一次独立fusion.launch，不重启底盘或定位。检查`/scout/fusion/status`，正常应为SHADOW_OK_NOT_NAVIGATION；它是数据健康状态，不是定位精度保证。
+
+动态验收在现场人员控制下执行直行、转弯、倒车，按共同时间窗计算两路及融合的相对刚体运动；不能把轮速累计pose直接当同原点真值。回放必须使用独立ROS master，禁止将历史/cmd_vel或/initialpose重放到实车master。回滚时停止两个融合节点，并在下一次建图/定位启动时设置`enable_shadow_fusion:=false`；旧链路和原始数据无需修改。

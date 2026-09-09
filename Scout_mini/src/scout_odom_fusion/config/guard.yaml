@@ -1,0 +1,18 @@
+lio_topic: /fastlio_odom
+wheel_topic: /scout/odom
+output_topic: /scout/fused_odom
+odom_frame: odom
+base_frame: base_link
+max_input_age: 0.30
+future_tolerance: 0.05
+dropout_timeout: 0.50
+max_linear_speed: 2.0
+max_angular_speed: 3.0
+lio_jump_margin_m: 0.30
+lio_jump_margin_rad: 0.20
+# Explicit tuning assumptions, not calibrated sensor uncertainty.
+# Zero pose covariance in the current TF adapter is NOT treated as perfect truth.
+lio_pose_variances: [0.01, 0.01, 0.04, 0.0025, 0.0025, 0.0025]
+wheel_speed_variance: 0.0025
+turn_scale_rad_s: 0.30
+max_turn_variance_scale: 25.0
