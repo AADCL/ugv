@@ -147,7 +147,7 @@ map_metadata.yaml
 检查完整文件清单的同时，还必须确认目录中不存在
 `.finalization_incomplete`；存在该标志时，不能通过复制、改名或手工删除标志的方式将地图强行交付。
 
-`map_raw.yaml`是正式导航静态占据图；`map.yaml`用于定位入口显示兼容。二者都按已确认的建图参数预先膨胀`0.15 m`。车体轨迹只在0.30 m半宽的真实扫掠走廊中补充自由证据，障碍始终覆盖自由证据。
+`map_raw.yaml`是正式导航静态占据图；`map.yaml`用于定位入口显示兼容。2026-09-09起，新生成PGM的离线障碍膨胀由`0.15 m`减为`0.10 m`，旧地图不会自动变化。车体轨迹只在0.30 m半宽的真实扫掠走廊中补充自由证据，障碍始终覆盖自由证据。
 
 不要单独移动或删除 `terrain_2p5d.yaml` 的`layers`字段所列`.f32/.u8`文件。不替换已归档raw、仅核对同一输入时可省略`--replace-raw`：
 
@@ -223,14 +223,33 @@ V5.1正式话题是`/terrain/obstacle_points`和`/terrain/clearing_points`。在
 
 ## 6. 建图 15 cm 与导航 10 cm 膨胀的含义
 
-- PGM `obstacle_inflation_m=0.15 m`：在保存地图时从原始障碍边界向外写入占据格；
+- PGM `obstacle_inflation_m=0.10 m`：在保存地图时从原始障碍边界向外写入占据格；
 - global costmap `inflation_radius=0.10 m`：静态障碍向外扩展的运行距离；
 - local costmap `inflation_radius=0.10 m`：实时障碍向外扩展的运行距离；
-- TEB `inflation_dist=0.10 m`：轨迹优化的软代价范围；
+- TEB `inflation_dist=0.20 m`：轨迹优化的软代价范围，必须大于0.15 m净空；
 - footprint：Scout 实际车体 polygon，保持原值；
 - TEB `min_obstacle_dist=0.15 m`：车体边界到障碍的期望净空，保持原值。
 
-建图0.15 m与全局运行时0.10 m不是覆盖关系：全局静态图上它们会依次作用，离散栅格误差外约形成0.25 m障碍外扩。local costmap的0.10 m只作用于实时障碍。footprint是车体真实轮廓，不是膨胀；TEB净空又是独立约束。本次没有改动已经正常工作的move_base/TEB参数。
+建图0.10 m与全局运行时0.10 m不是覆盖关系：先在PGM写入占据格，再计算运行时代价，不能把两者之和当成车体安全净空。local costmap的0.10 m作用于实时障碍。footprint表示车体轮廓，padding和TEB净空是另行使用的量，不是全部简单相加。
+
+### 角度晃动首轮调参与旧地图迁移（2026-09-09）
+
+当前配置轮廓为长0.670 m、宽0.590 m：base_link向前0.370 m、向后0.300 m、左右各0.295 m。costmap每侧padding为0.030 m，外包络为0.730×0.650 m；这不是新测量结果，仍需核对实车附件。保留Scout轮廓，不采用轮趣0.500×0.400 m的小车轮廓。
+
+导航入口自动加载TEB新值：`max_vel_theta=0.40 rad/s`（约22.9度/秒），`acc_lim_theta=0.30 rad/s²`。原值分别为1.00和2.50。线速度0.35 m/s、线加速度0.50 m/s²及禁止主动倒车不变。TEB是轨迹优化器，不是可直接调整P增益的PID；本次未改底盘固件。调参时车端ROS未运行，不能宣称已定位或消除晃动。TEB加速度是优化约束，并非独立硬件限幅器；手柄指令也不受这两个TEB参数限制。
+
+下次启动原导航launch即可加载新值，无需附加节点。低速空旷场地测试直行、转弯、终点对齐；现场人员持急停。若仍晃动，使用现有导航日志记录流程：比较`/cmd_vel`、`/scout/odom`、`/Odometry`和`/tf`；指令反复换向查规划，指令平稳而车身晃动查底盘，车身不动而map朝向跳变查重定位和TF。不要继续盲降PID或改外参。
+
+旧地图要采用10 cm离线膨胀，必须停车并停止建图、定位、导航，先备份整个地图目录，再运行：
+
+```bash
+source ~/livox_fastlio/devel/setup.bash
+# factory_a仅为示例，替换为实际地图名；先确认没有同名备份目录。
+cp -a ~/livox_fastlio/maps/factory_a ~/livox_fastlio/maps/factory_a_before_inflation_20260909
+rosrun scout_map_tools finalize_map.py factory_a --replace-raw
+```
+
+等待转换全部成功、`.finalization_incomplete`不存在，再重启定位和导航。不能对已有PGM直接腐蚀，避免误删真实障碍。当前部署只更新默认配置，不自动覆盖任何现有地图。
 
 ## 7. 雷达与轮胎高度
 

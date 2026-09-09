@@ -40,6 +40,7 @@ TOPICS=(
   /rosout_agg
   /cmd_vel
   /scout/odom
+  /Odometry
   /fastlio_odom
   /move_base_simple/goal
   /move_base/status

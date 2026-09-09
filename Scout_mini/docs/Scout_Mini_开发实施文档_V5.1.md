@@ -220,7 +220,7 @@ rosrun scout_map_tools finalize_map.py factory_a
 
 若不希望替换已归档raw，可省略`--replace-raw`，脚本只接受内容完全相同的输入。mapper一旦触发体素容量硬限制，会保存恢复PCD和`.capacity_limited`标志并让保存服务失败；finalize默认拒绝该截断地图。`--allow-capacity-limited`仅用于开发抢救，不能交付。
 
-新增/修改文件为`terrain_reclassify.cpp/.yaml`、`pcd_static_gate.cpp`、`pcd_to_pgm.cpp`、`finalize_map.py`和三个Scout地图配置。按用户确认，三份PGM配置的`obstacle_inflation_m=0.15`；move_base现有0.10 m运行时膨胀不改，两者会依次生效而不是相互覆盖。`free_evidence_radius_m=0.30`来自Scout半宽0.295 m，不复制WheelTech的0.20 m。离线重分类、PGM与2.5D builder均设置`max_extent_m=100`和`max_grid_cells=2000000`，遇到远端XY离群点时明确失败，避免Jetson创建无界稠密网格。
+新增/修改文件为`terrain_reclassify.cpp/.yaml`、`pcd_static_gate.cpp`、`pcd_to_pgm.cpp`、`finalize_map.py`和三个Scout地图配置。2026-09-09按用户要求，三份PGM配置的`obstacle_inflation_m`从0.15减至`0.10`；move_base现有0.10 m运行时膨胀不改，两者依次生效而非覆盖，也不能简单相加作为车体净空。`free_evidence_radius_m=0.30`来自Scout半宽0.295 m，不复制WheelTech的0.20 m。离线重分类、PGM与2.5D builder均设置`max_extent_m=100`和`max_grid_cells=2000000`，遇到远端XY离群点时明确失败，避免Jetson创建无界稠密网格。
 
 ## 9. 高程坡度与当前帧局部障碍
 
@@ -277,7 +277,7 @@ move_base
 
 `scout_navigation/config/local_costmap_slope.yaml`：当前帧marking/clearing双源 + InflationLayer。
 
-`scout_navigation/config/teb_local_planner.yaml`：保留 Scout 原 footprint、速度和运动学参数。
+`scout_navigation/config/teb_local_planner.yaml`：保留 Scout 原footprint和线速度；2026-09-09降低转向速度及加速度，作为角度晃动首轮调参，尚待实车验收。
 
 本次统一修改：
 
@@ -289,10 +289,42 @@ inflation_radius: 0.10
 inflation_radius: 0.10
 
 # teb_local_planner.yaml
-inflation_dist: 0.10
+TebLocalPlannerROS:
+  max_vel_theta: 0.40
+  acc_lim_theta: 0.30
+  inflation_dist: 0.20
 ```
 
-`costmap_common.yaml` 的 polygon footprint 和 `footprint_padding: 0.03` 未改。TEB `min_obstacle_dist: 0.15` 也未改，它是轨迹净空，不是 costmap 障碍膨胀。
+`costmap_common.yaml` 的 polygon footprint 和 `footprint_padding: 0.03` 未改。TEB `min_obstacle_dist: 0.15` 也未改，它是轨迹净空，不是 costmap 障碍膨胀。`inflation_dist=0.20`使软代价范围大于净空，修正原0.10小于0.15的问题。
+
+本轮逐文件操作（路径均相对`~/livox_fastlio/src`）：
+
+| 文件 | 修改内容 | 生效条件 |
+|---|---|---|
+| `scout_navigation/config/teb_local_planner.yaml` | 在现有`TebLocalPlannerROS`下修改上述三项，不新增第二个同名块；原角速度1.00、角加速度2.50、软距离0.10 | 重启导航launch |
+| `scout_navigation/config/costmap_common.yaml` | 仅修正base_link非几何中心的注释；轮廓、padding不变 | 无行为变化 |
+| `scout_map_tools/config/scout_raw.yaml` | `obstacle_inflation_m: 0.10` | 重新生成PGM |
+| `scout_map_tools/config/scout_nav.yaml` | `obstacle_inflation_m: 0.10` | 重新生成PGM |
+| `scout_map_tools/config/scout_terrain_cost.yaml` | `obstacle_inflation_m: 0.10` | 重新生成PGM |
+| `scout_navigation/scripts/nav_log_session.sh` | TOPICS数组加入`/Odometry`，保留现有控制、底盘、TF记录 | 下次启动日志记录 |
+
+本轮只改YAML、注释和日志脚本，不需要重新编译；新工作空间仍按逐包索引执行`catkin_make -j1`。既有导航launch已加载该TEB文件，无需额外命令或新节点。轮趣参考值为角速度0.40、角加速度0.30、离线膨胀0.00；Scout保留更大车体、3 cm padding和15 cm净空，离线膨胀只降到10 cm，未复制轮趣小车尺寸。
+
+配置车体前0.370、后0.300、左右各0.295 m，即0.670×0.590 m，padding后的costmap外包络0.730×0.650 m。它们是配置值，不代表已复测当前附件。`scout_base/src/scout_messenger.cpp`将速度送往底盘SDK，本次不改固件PID。TEB角加速度是优化约束而非独立硬件限幅器，不限制手动遥控。
+
+```bash
+source ~/livox_fastlio/devel/setup.bash
+# 只展开参数，不启动节点或让车运动。
+roslaunch --dump-params scout_navigation navigation_teb.launch map_name:=factory_a
+# 由现场人员正常启动定位和导航后核对：
+rosparam get /move_base/TebLocalPlannerROS/max_vel_theta
+rosparam get /move_base/TebLocalPlannerROS/acc_lim_theta
+rosparam get /move_base/TebLocalPlannerROS/inflation_dist
+```
+
+预期分别为0.40、0.30、0.20。停车后备份地图、停止建图/定位/导航，再按使用文档运行`finalize_map.py <地图名> --replace-raw`迁移旧PGM；不要直接腐蚀现有PGM，不自动改动在用地图。回滚配置时将上述值恢复为1.00、2.50、0.10，三个离线值恢复0.15；旧地图需恢复完整目录备份，改回YAML不会恢复PGM。
+
+验收必须分辨物理摆动和定位跳变：用本文日志流程记录`/cmd_vel`、`/scout/odom`、`/Odometry`、`/tf`。指令反复换向查TEB/路径，指令稳定而底盘摆动查底盘响应，车不动而map方向变查NDT和TF唯一性。空旷场地低速测试直行、转弯、终点对齐，现场持急停。部署时ROS未运行，不能以静态配置检查代替运动验收。
 
 `move_base_slope_teb.yaml`安装并配置了`StartEscapeRecovery`，但`recovery_behavior_enabled=false`保持Scout现有导航行为不变。完成现场静态覆盖验收后才能手动启用。启用时逃逸速度0.05 m/s、目标0.30 m；后向覆盖区按雷达前置0.25 m换算为`terrain_sensor`坐标X=-1.05～-0.55 m、半宽0.36 m。覆盖还必须来自`terrain_sensor`帧且消息时间戳与回调墙钟都在0.25秒内，并满足至少20点、X跨度0.20 m且左右各至少5点；costmap在互斥锁内检查足迹边界和内部。全局起点不是明确致命碰撞（未知区和图外均拒绝）、局部走廊不安全或1.5秒内位移不足0.02 m时，插件拒绝/停止倒车。TEB自身`max_vel_x_backwards=0`保持原值。
 
@@ -446,7 +478,7 @@ rosparam get /move_base/recovery_behaviors
 - [ ] `sensor_height=0.48 m` 与实测雷达中心离地高度一致。
 - [ ] `base_link_height_above_ground=0.28 m`，离线地面种子不误用0.20 m刚性偏移。
 - [ ] 轮胎总高 `0.15 m`，正式相对障碍阈值为 `0.08 m`。
-- [ ] PGM离线障碍膨胀为`0.15 m`；move_base/TEB原有导航参数未改。
+- [ ] 新PGM离线障碍膨胀为`0.10 m`；TEB角速度0.40、角加速度0.30、软距离0.20；实车晃动改善与避障净空单独验收。
 - [ ] 保存和当前帧最大可通行坡度均为`22 deg`，近距起点为`0.12 m`。
 - [ ] 导航局部costmap订阅`/terrain/obstacle_points`和`/terrain/clearing_points`，不再订阅elevation前缀旧话题。
 - [ ] `recovery_behavior_enabled=false`保持默认；启用前验证未知区、图外和后向覆盖不足均拒绝倒车。

@@ -137,7 +137,7 @@ filtered_camera_init.pcd
 | `terrain_cost.yaml` | 2D 诊断图 | 坡度/障碍可视化 |
 | `map_metadata.yaml` | YAML | 外参和地图生成参数快照 |
 
-PGM按用户确认预先膨胀`0.15 m`；move_base全局运行时膨胀仍为`0.10 m`，两者依次作用、不是覆盖关系。局部实时障碍只使用local costmap的`0.10 m`运行时膨胀。
+2026-09-09起，新生成PGM预先膨胀`0.10 m`（原0.15 m）；move_base全局运行时膨胀仍为`0.10 m`，两者依次作用、不是覆盖关系，也不能直接相加作为车体净空。旧PGM需备份后重新finalize。局部实时障碍使用local costmap的`0.10 m`运行时膨胀。
 
 ## 7. 导航数据流
 
@@ -195,7 +195,7 @@ GlobalPlanner -> TEB -> /cmd_vel
 | `/livox/imu` | `sensor_msgs/Imu` | Mid-360 IMU |
 | `/tf` | `tf2_msgs/TFMessage` | 动态TF：FAST-LIO与NDT |
 | `/tf_static` | `tf2_msgs/TFMessage` | Scout几何、车体与相机静态TF |
-| `/Odometry` | `nav_msgs/Odometry` | FAST-LIO `camera_init/body` 位姿 |
+| `/Odometry` | `nav_msgs/Odometry` | FAST-LIO `camera_init/body` 位姿；导航日志同时录制，供姿态晃动对比 |
 | `/fastlio_odom` | `nav_msgs/Odometry` | pose adapter输出的`odom/base_link`位姿与mapper轨迹输入 |
 | `/cloud_registered` | `sensor_msgs/PointCloud2` | `camera_init` 注册点云 |
 | `/cloud_registered_body` | `sensor_msgs/PointCloud2` | FAST-LIO 当前 body 点云 |
@@ -296,12 +296,14 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 | global inflation radius | `0.10 m` | 保留Scout已验证基线 |
 | local inflation radius | `0.10 m` | 保留Scout已验证基线 |
 | cost scaling factor | `5.0` | 全局/局部相同 |
-| TEB inflation distance | `0.10 m` | 保留Scout已验证基线，软代价 |
+| TEB inflation distance | `0.20 m` | 软代价范围，修正原0.10小于0.15净空的不合理配置 |
 | TEB min obstacle distance | `0.15 m` | 保留 Scout 原值 |
 | footprint padding | `0.03 m` | 保留 Scout 原值 |
+| footprint envelope | `0.670 x 0.590 m` | base_link前0.370、后0.300、左右各0.295；配置值，需核对附件 |
+| padded costmap envelope | `0.730 x 0.650 m` | 每侧增加0.03；TEB polygon仍使用未padding轮廓 |
 | local costmap | `6 x 6 m`、`0.05 m/cell` | odom 滚动窗口 |
 | local observation | marking=`/terrain/obstacle_points`；clearing=`/terrain/clearing_points` | persistence=0 |
-| offline PGM inflation | `0.15 m` | 已确认建图参数；与全局0.10 m依次生效 |
+| offline PGM inflation | `0.10 m` | 2026-09-09小幅降低；旧PGM需重新生成 |
 | start escape | `0.05 m/s`、`0.30 m` | 默认关闭；实车验证后才允许启用 |
 | rear coverage box | X=`-1.05~-0.55 m`、半宽`0.36 m` | 必须是terrain_sensor帧且header/回调均在0.25 s内；需20点、X跨度0.20 m、左右各5点 |
 | escape stall gate | `1.5 s / 0.02 m` | 倒车无进展时提前停止，不等待8 s总时限 |
@@ -312,13 +314,13 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 |---|---:|
 | max forward speed | `0.35 m/s` |
 | max backward speed | `0.00 m/s` |
-| max angular speed | `1.00 rad/s` |
+| max angular speed | `0.40 rad/s`（原1.00，约22.9度/秒） |
 | linear acceleration | `0.50 m/s2` |
-| angular acceleration | `2.50 rad/s2` |
+| angular acceleration | `0.30 rad/s2`（原2.50） |
 | minimum turning radius | `0.0 m` |
 | homotopy planning | `false` |
 
-这些参数保持 Scout 既有配置，没有套用 WheelTech 的速度和加速度。
+2026-09-09仅参考轮趣降低角速度和角加速度，Scout线速度、线加速度、轮廓保持不变。TEB是轨迹优化器，不是PID；角加速度为优化约束，不是独立硬件限幅，手动遥控不受TEB限速约束。车端检查时ROS未运行，以上为待实车验证的首轮调参，不是已确认的晃动根因修复。若仍晃动，按使用文档比较指令、底盘里程计、FAST-LIO与map到odom的TF，区分控制摆动和定位跳变。
 
 ## 11. 代码位置
 

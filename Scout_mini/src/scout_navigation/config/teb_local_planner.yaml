@@ -45,10 +45,11 @@ TebLocalPlannerROS:
   max_vel_x: 0.35
   max_vel_x_backwards: 0.00
   max_vel_y: 0.0
-  max_vel_theta: 1.00
+  # Conservative turning baseline matching WheelTech; validate on Scout hardware.
+  max_vel_theta: 0.40
 
   acc_lim_x: 0.50
-  acc_lim_theta: 2.50
+  acc_lim_theta: 0.30
 
   # Scout Mini 在当前控制模型下按差速/滑移转向处理，可原地转向。
   min_turning_radius: 0.0
@@ -81,8 +82,9 @@ TebLocalPlannerROS:
   # 初版给 15 cm，优先解决之前“蹭障碍”的问题。
   min_obstacle_dist: 0.15
 
-  # 与全局/局部 costmap 一致，障碍软代价距离为 0.10 m。
-  inflation_dist: 0.10
+  # TEB soft cost must extend beyond the 0.15 m minimum clearance.
+  # This is independent of the costmap InflationLayer radius.
+  inflation_dist: 0.20
 
   costmap_obstacles_behind_robot_dist: 1.0
   obstacle_poses_affected: 20

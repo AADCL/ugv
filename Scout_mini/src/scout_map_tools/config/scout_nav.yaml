@@ -13,9 +13,9 @@ free_dilation_m: 0.10
 # Only a recorded base_link centre path may open ground-missing cells. Scout
 # Mini half width is about 0.295 m, rounded to a conservative 0.30 m corridor.
 free_evidence_radius_m: 0.30
-# User-confirmed mapping inflation. This is baked into the PGM and is separate
-# from the unchanged 0.10 m move_base runtime InflationLayer.
-obstacle_inflation_m: 0.15
+# Baked into the PGM, separate from the 0.10 m runtime InflationLayer.
+# Existing maps require refinalization to adopt the reduced margin.
+obstacle_inflation_m: 0.10
 
 classified_obstacle/ground_search_radius_m: 0.30
 classified_ground/height_percentile: 0.20
