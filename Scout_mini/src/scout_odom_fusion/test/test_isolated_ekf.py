@@ -19,6 +19,7 @@ def main():
     parser.add_argument('--lio-scale', type=float, default=1.)
     parser.add_argument('--duration', type=float, default=10.)
     parser.add_argument('--lio-delay', type=float, default=.08)
+    parser.add_argument('--port', type=int, default=11431)
     args = parser.parse_args()
     yaw0 = math.radians(args.yaw_deg)
 
@@ -29,8 +30,9 @@ def main():
         return (args.speed/args.turn_rate*(math.sin(angle)-math.sin(yaw0)),
                 args.speed/args.turn_rate*(math.cos(yaw0)-math.cos(angle)), angle)
 
-    port = 11431
+    port = args.port
     probe = socket.socket()
+    probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
         probe.bind(('127.0.0.1', port))
     finally:
