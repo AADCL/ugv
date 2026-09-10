@@ -146,7 +146,10 @@ class FusionGuard:
             if first:
                 self.first_lio = stamp
             out = copy.deepcopy(msg)
-            out.pose.covariance = diagonal(self.initial_pose_var if first else self.pose_var)
+            # ROS publisher/subscriber startup is asynchronous: the first
+            # published pose may never reach the EKF. Keep the origin prior
+            # until an actual initialized EKF output has been observed.
+            out.pose.covariance = diagonal(self.pose_var if self.ekf_seeded else self.initial_pose_var)
             # Config excludes ALL LIO twist fields. Preserve input message on original topic.
             self.lio_pub.publish(out)
 

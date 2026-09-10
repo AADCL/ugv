@@ -111,14 +111,18 @@ class CallbackTests(unittest.TestCase):
 
     def test_initial_origin_covariance_then_weak_translation(self):
         self.node.pose_var = [100.,100.,100.,.0025,.0025,.0025]
+        # Simulate initial published messages being lost before EKF subscribes.
+        self.node.on_lio(self.message())
+        self.now += .1
         self.seed()
+        self.assertEqual(self.lio[1].pose.covariance[0], .01)
         self.now += .1
         self.node.on_lio(self.message(x=12.01))
         self.assertEqual(self.lio[0].pose.covariance[0], .01)
-        self.assertEqual(self.lio[1].pose.covariance[0], 100.)
-        self.assertEqual(self.lio[1].pose.covariance[7], 100.)
-        self.assertEqual(self.lio[1].pose.covariance[14], 100.)
-        self.assertEqual(self.lio[1].pose.covariance[35], .0025)
+        self.assertEqual(self.lio[2].pose.covariance[0], 100.)
+        self.assertEqual(self.lio[2].pose.covariance[7], 100.)
+        self.assertEqual(self.lio[2].pose.covariance[14], 100.)
+        self.assertEqual(self.lio[2].pose.covariance[35], .0025)
 
     def test_wrong_raw_frame_fails_closed(self):
         m = self.message()
