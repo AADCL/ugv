@@ -1,4 +1,6 @@
-# Scout Mini 自主导航机器人使用文档 V5.1
+# Scout Mini 自主导航机器人使用文档 V5.1 · BATF-Nav
+
+> 技术名称：`BATF-NavBayesianAccumulationTerrainFusionNavigation`；简称 **BATF-Nav**；英文展开 **Bayesian Accumulation Terrain Fusion Navigation**。见[统一技术说明](../../docs/BATF-Nav_V5.1.md)。本次统一命名不改变V5.1版本、接口或车型参数。
 
 > 本文用于日常建图、地图生成、重定位和导航。V5.1 使用实测雷达中心离地 `0.48 m` 和轮胎总高 `0.15 m`。
 

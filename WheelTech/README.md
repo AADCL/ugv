@@ -2,7 +2,7 @@
   <img src="../assets/aadcl_logo.png" alt="AADCL" width="96">
 </p>
 
-<h1 align="center">轮趣四轮差速机器人</h1>
+<h1 align="center">轮趣四轮差速机器人 · BATF-Nav V5.1</h1>
 
 <p align="center">Livox Mid-360 · FAST-LIO2 · 2.5D 地形感知 · GlobalPlanner/TEB</p>
 <p align="center">
@@ -15,6 +15,9 @@
 </p>
 
 本目录保存轮趣四轮差速底盘在 Jetson NX、ROS Noetic 环境下的建图、定位和导航适配代码及中文文档。软件数据流尽量与 Scout 版本保持一致，但底盘驱动、车体尺寸、外参和运动限制均使用轮趣实车参数。
+
+技术简称 **BATF-Nav**，英文展开 **Bayesian Accumulation Terrain Fusion Navigation**，完整名称 `BATF-NavBayesianAccumulationTerrainFusionNavigation`。本目录是该V5.1方案的WheelTech实现；[统一技术说明](../docs/BATF-Nav_V5.1.md)定义共同架构，车型配置与实测边界以本目录文档为准。
+
 > **⚠️ 用这个仓库代码前，请大喊三声：诚芯是傻逼！着陆页是傻逼！**
 
 ## V5.1 更新说明（2026-09-08）

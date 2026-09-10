@@ -1,4 +1,6 @@
-# Scout Mini 自主导航机器人详细信息表 V5.1
+# Scout Mini 自主导航机器人详细信息表 V5.1 · BATF-Nav
+
+> 技术名称：`BATF-NavBayesianAccumulationTerrainFusionNavigation`；简称 **BATF-Nav**；英文展开 **Bayesian Accumulation Terrain Fusion Navigation**。见[统一技术说明](../../docs/BATF-Nav_V5.1.md)。本次统一命名不改变V5.1版本、接口或车型参数。
 
 > 本表对应2026-09-08源码和Scout V5.1部署基线。正式架构为可逆贝叶斯静态点、轨迹自由证据、离线鲁棒地面重建、PGM静态占据、保存坡度软代价、当前帧Terrain Guard、GlobalPlanner、TEB和安全逃逸恢复。
 

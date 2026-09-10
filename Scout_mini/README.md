@@ -1,4 +1,6 @@
-# Scout Mini 自主导航机器人
+# Scout Mini 自主导航机器人 · BATF-Nav V5.1
+
+技术简称 **BATF-Nav**，英文展开 **Bayesian Accumulation Terrain Fusion Navigation**，完整名称 `BATF-NavBayesianAccumulationTerrainFusionNavigation`。本目录是该V5.1方案的Scout Mini实现；[统一技术说明](../docs/BATF-Nav_V5.1.md)定义共同架构，车型配置与实测边界以本目录文档为准。
 
 Scout Mini 项目运行于 Ubuntu 20.04 / ROS Noetic，硬件包括 AgileX Scout Mini、NVIDIA Jetson、Livox Mid-360 和 Intel RealSense D435i。
 
