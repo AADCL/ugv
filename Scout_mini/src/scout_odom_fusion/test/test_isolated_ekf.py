@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Synthetic FLU/zero-reset/dropout test on a private ROS master, never the robot master."""
 import math
+import argparse
 import os
 import signal
 import socket
@@ -10,6 +11,22 @@ import time
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--profile', choices=('baseline', 'wheel_priority'), default='baseline')
+    parser.add_argument('--yaw-deg', type=float, default=90.)
+    parser.add_argument('--turn-rate', type=float, default=0.)
+    parser.add_argument('--speed', type=float, default=.2)
+    parser.add_argument('--lio-scale', type=float, default=1.)
+    args = parser.parse_args()
+    yaw0 = math.radians(args.yaw_deg)
+
+    def trajectory(t):
+        angle = yaw0 + args.turn_rate*t
+        if abs(args.turn_rate) < 1e-9:
+            return args.speed*t*math.cos(yaw0), args.speed*t*math.sin(yaw0), angle
+        return (args.speed/args.turn_rate*(math.sin(angle)-math.sin(yaw0)),
+                args.speed/args.turn_rate*(math.cos(yaw0)-math.cos(angle)), angle)
+
     port = 11431
     probe = socket.socket()
     try:
@@ -36,7 +53,8 @@ def main():
                 if time.monotonic() > deadline:
                     raise RuntimeError('Private master did not start')
                 time.sleep(.1)
-            children.append(subprocess.Popen(['roslaunch', 'scout_odom_fusion', 'fusion.launch'], stdout=log, stderr=log))
+            children.append(subprocess.Popen(['roslaunch', 'scout_odom_fusion', 'fusion.launch',
+                                             'profile:='+args.profile], stdout=log, stderr=log))
             import rospy
             from nav_msgs.msg import Odometry
             from diagnostic_msgs.msg import DiagnosticArray
@@ -63,25 +81,29 @@ def main():
                 wheel.header.stamp, wheel.header.frame_id, wheel.child_frame_id = stamp, 'scout_odom', 'base_link'
                 wheel.pose.pose.orientation.w = 1
                 wheel.pose.pose.position.x = 100 + .2*elapsed if elapsed < 5 else 0
-                wheel.twist.twist.linear.x = .2
+                wheel.twist.twist.linear.x = args.speed
+                wheel.twist.twist.angular.z = args.turn_rate
                 wheel_pub.publish(wheel)
                 if step % 5 == 0:
                     lio = Odometry()
                     # LIO arrives 80 ms late; timestamp and trajectory agree.
                     lio.header.stamp = stamp - rospy.Duration(.08)
                     lio.header.frame_id, lio.child_frame_id = 'odom', 'base_link'
-                    lio.pose.pose.position.x = 10
-                    lio.pose.pose.position.y = 20 + .2*max(0, elapsed-.08)
-                    lio.pose.pose.orientation.z = math.sin(math.pi/4)
-                    lio.pose.pose.orientation.w = math.cos(math.pi/4)
+                    dx, dy, angle = trajectory(max(0, elapsed-.08))
+                    lio.pose.pose.position.x = 10 + args.lio_scale*dx
+                    lio.pose.pose.position.y = 20 + args.lio_scale*dy
+                    lio.pose.pose.orientation.z = math.sin(angle/2)
+                    lio.pose.pose.orientation.w = math.cos(angle/2)
                     lio_pub.publish(lio)
                 step += 1
                 time.sleep(.02)
             assert len(outputs) > 100, ('Too few outputs', len(outputs), log_dir)
             last = outputs[-1]
-            assert abs(last.pose.pose.position.x - 10) < .15, 'Body vx incorrectly treated as world vx'
-            assert abs(last.pose.pose.position.y - 22) < .25, 'Incorrect origin, timing or wheel reset'
-            assert abs(last.twist.twist.linear.x - .2) < .1
+            dx, dy, _ = trajectory(elapsed)
+            error = math.hypot(last.pose.pose.position.x-10-dx, last.pose.pose.position.y-20-dy)
+            if args.lio_scale == 1. or args.profile == 'wheel_priority':
+                assert error < .30, ('Wrong body/world transformation or excessive LIO pull', error, log_dir)
+            assert abs(last.twist.twist.linear.x - args.speed) < .1
             assert all(m.header.frame_id == 'odom' and m.child_frame_id == 'base_link' for m in outputs)
             assert all(b.header.stamp > a.header.stamp for a,b in zip(outputs, outputs[1:]))
             assert not tf_messages, 'Shadow nodes published TF'
@@ -90,7 +112,8 @@ def main():
             time.sleep(1.3)
             assert len(outputs) == stopped_count, 'Output continued after input dropout'
             assert statuses[-1].status[0].level == 2, 'Dropout was not diagnosed'
-            print('PASS: nonzero origin, FLU 90-degree yaw, delayed LIO, wheel pose reset, no TF, monotonic stamps, dropout stop')
+            print('PASS: profile=%s yaw=%g turn=%g speed=%g lio_scale=%g endpoint_error=%.4fm; nonzero origin, delayed LIO, wheel reset, no TF, monotonic stamps, dropout stop' %
+                  (args.profile,args.yaw_deg,args.turn_rate,args.speed,args.lio_scale,error))
             print('outputs=%d last_xy=(%.4f, %.4f) logs=%s' % (len(outputs), last.pose.pose.position.x, last.pose.pose.position.y, log_dir))
         finally:
             for child in reversed(children):

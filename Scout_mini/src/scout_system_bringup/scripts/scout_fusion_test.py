@@ -18,6 +18,8 @@ CONFLICTS = {'laserMapping','livox_lidar_publisher2','scout_base_node','move_bas
 def main():
     parser = argparse.ArgumentParser(description='Manual driving comparison; no NDT, navigation or motion commands')
     parser.add_argument('--check-only',action='store_true',help='Read-only preflight, do not launch hardware')
+    parser.add_argument('--profile', choices=('baseline', 'wheel_priority'), default='wheel_priority',
+                        help='Test configuration (default: wheel_priority); navigation is unchanged')
     args = parser.parse_args()
     socket.setdefaulttimeout(3)
     try:
@@ -40,7 +42,9 @@ def main():
         print('PREFLIGHT_OK; hardware was NOT started')
         return 0
     print('Keep stationary until [COMPARE] READY. Manual driving only; park before Ctrl+C.',flush=True)
-    process = subprocess.Popen(['roslaunch','scout_system_bringup','scout_fusion_test.launch'],start_new_session=True)
+    print('Fusion profile: '+args.profile, flush=True)
+    process = subprocess.Popen(['roslaunch','scout_system_bringup','scout_fusion_test.launch',
+                                'fusion_profile:='+args.profile],start_new_session=True)
     try:
         return process.wait()
     except KeyboardInterrupt:

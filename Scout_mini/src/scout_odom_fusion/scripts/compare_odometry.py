@@ -61,10 +61,15 @@ class Comparison:
         import rospy
         from nav_msgs.msg import Odometry
         self.ros = rospy
+        self.fusion_configuration = {
+            'guard': rospy.get_param('/scout_fusion_guard', {}),
+            'ekf': rospy.get_param('/scout_shadow_ekf', {})}
         self.lock = threading.RLock()
         root = Path(rospy.get_param('~output_root', str(Path.home()/'livox_fastlio/logs/fusion_tests'))).expanduser()
         root.mkdir(parents=True, exist_ok=True)
         self.directory = Path(tempfile.mkdtemp(prefix=time.strftime('%Y%m%d_%H%M%S_'), dir=str(root)))
+        (self.directory/'configuration.json').write_text(
+            json.dumps(self.fusion_configuration, indent=2, allow_nan=False)+'\n')
         self.buffers = {n: deque(maxlen=300) for n in NAMES}
         self.arrived, self.frames = {}, {}
         self.origin = None
@@ -199,6 +204,7 @@ class Comparison:
         self.file.flush()
         self.file.close()
         summary = {'valid_samples':self.count,'invalid_reason':self.fault,'frames':self.frames,
+                   'fusion_configuration':self.fusion_configuration,
                    'last':self.last_row,'rejected_samples':self.rejected,
                    'meaning':'Differences to wheel reference, NOT independent accuracy. Path length includes stationary noise.',
                    'plot_last_samples_limit':20000,'difference_statistics':{}}

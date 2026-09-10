@@ -1,4 +1,7 @@
 <launch>
+  <arg name="profile" default="baseline" />
+  <!-- Reject unknown profiles rather than silently selecting a configuration. -->
+  <arg name="checked_profile" value="$(eval {'baseline': 'baseline', 'wheel_priority': 'wheel_priority'}[arg('profile')])" />
   <!-- Shadow mode only: neither node publishes TF or controls navigation. -->
   <node pkg="robot_localization" type="ekf_localization_node"
         name="scout_shadow_ekf" output="screen">
@@ -8,5 +11,8 @@
   <node pkg="scout_odom_fusion" type="fusion_guard.py"
         name="scout_fusion_guard" output="screen">
     <rosparam command="load" file="$(find scout_odom_fusion)/config/guard.yaml" />
+    <rosparam if="$(eval arg('checked_profile') == 'wheel_priority')" command="load"
+              file="$(find scout_odom_fusion)/config/guard_wheel_priority.yaml" />
+    <param name="profile" value="$(arg checked_profile)" />
   </node>
 </launch>

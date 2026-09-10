@@ -1,6 +1,7 @@
 <launch>
   <!-- Use scout_fusion_test.py for preflight checks. No NDT/map/navigation nodes. -->
   <arg name="output_root" default="$(env HOME)/livox_fastlio/logs/fusion_tests" />
+  <arg name="fusion_profile" default="wheel_priority" />
   <include file="$(find livox_ros_driver2)/launch_ROS1/msg_MID360.launch" />
   <include file="$(find scout_system_bringup)/launch/fastlio_local_odom.launch" />
   <include file="$(find scout_tf_manager)/launch/tf_manager.launch" />
@@ -9,7 +10,9 @@
     <arg name="odom_topic_name" value="/scout/odom" />
     <arg name="pub_tf" value="false" />
   </include>
-  <include file="$(find scout_odom_fusion)/launch/fusion.launch" />
+  <include file="$(find scout_odom_fusion)/launch/fusion.launch">
+    <arg name="profile" value="$(arg fusion_profile)" />
+  </include>
   <node pkg="scout_odom_fusion" type="compare_odometry.py" name="scout_odom_comparison" output="screen">
     <param name="output_root" value="$(arg output_root)" />
   </node>

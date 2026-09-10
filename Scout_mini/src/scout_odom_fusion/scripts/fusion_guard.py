@@ -55,6 +55,7 @@ class FusionGuard:
         from diagnostic_msgs.msg import DiagnosticArray
         self.ros, self.Odometry = rospy, Odometry
         self.lock = threading.RLock()
+        self.profile = rospy.get_param('~profile', 'baseline')
         self.world = rospy.get_param('~odom_frame', 'odom')
         self.body = rospy.get_param('~base_frame', 'base_link')
         self.age = float(rospy.get_param('~max_input_age', 0.30))
@@ -220,6 +221,7 @@ class FusionGuard:
                     status.level = 2 if self.fault else (0 if self.started else 1)
                     status.message = self.fault or ('SHADOW_OK_NOT_NAVIGATION' if self.started else 'WAITING_FOR_FRESH_INPUTS')
                     status.values = [KeyValue(key=k, value=str(v)) for k,v in (
+                        ('profile', self.profile),
                         ('lio_rejected', self.lio.rejected), ('wheel_rejected', self.wheel.rejected),
                         ('lio_stamp', self.lio.stamp), ('wheel_stamp', self.wheel.stamp),
                         ('output_stamp', self.output.stamp))]

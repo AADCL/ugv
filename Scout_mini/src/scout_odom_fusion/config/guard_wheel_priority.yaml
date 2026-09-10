@@ -1,0 +1,5 @@
+# Experimental weak LIO translation, strong BODY-frame wheel forward speed.
+# XYZ are all weakened: the corridor need not follow world/startup X.
+# Variances are tuning assumptions, not calibrated sensor accuracy.
+lio_pose_variances: [100.0, 100.0, 100.0, 0.0025, 0.0025, 0.0025]
+wheel_speed_variance: 0.0004
