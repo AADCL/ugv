@@ -1,8 +1,8 @@
 # Experimental weak LIO translation, strong BODY-frame wheel forward speed.
 # XYZ are all weakened: the corridor need not follow world/startup X.
 # Variances are tuning assumptions, not calibrated sensor accuracy.
-lio_pose_variances: [10000.0, 10000.0, 10000.0, 0.0025, 0.0025, 0.0025]
+lio_pose_variances: [1000000.0, 1000000.0, 1000000.0, 0.0025, 0.0025, 0.0025]
 wheel_speed_variance: 0.0004
 # Anchor the initial coordinate origin; weak subsequent translation must not
-# imply that the initial origin itself has 10000 m^2 uncertainty.
+# imply that the initial origin itself has 1000000 m^2 uncertainty.
 initial_lio_pose_variances: [0.01, 0.01, 0.04, 0.0025, 0.0025, 0.0025]

@@ -437,7 +437,7 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 | 参数/接口 | baseline | wheel_priority |
 |---|---|---|
 | guard覆盖文件 | 无，guard.yaml | config/guard_wheel_priority.yaml |
-| 运行LIO XYZ方差 m² | 0.01 / 0.01 / 0.04 | 10000 / 10000 / 10000 |
+| 运行LIO XYZ方差 m² | 0.01 / 0.01 / 0.04 | 各1000000，近乎关闭平移纠偏的试验权重，非标定值 |
 | LIO RPY方差 rad² | 各0.0025 | 各0.0025 |
 | 初始化XYZ方差 m² | 0.01 / 0.01 / 0.04 | 0.01 / 0.01 / 0.04，持续到收到EKF初始化输出 |
 | 轮速前向方差 (m/s)² | 0.0025 | 0.0004 |

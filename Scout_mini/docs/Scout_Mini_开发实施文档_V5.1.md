@@ -615,12 +615,12 @@ Ubuntu20.04 SciPy1.3使用from_dcm/as_dcm，脚本同时兼容新版本from_matr
 覆盖文件完整有效配置：
 
 ```yaml
-lio_pose_variances: [10000.0, 10000.0, 10000.0, 0.0025, 0.0025, 0.0025]
+lio_pose_variances: [1000000.0, 1000000.0, 1000000.0, 0.0025, 0.0025, 0.0025]
 wheel_speed_variance: 0.0004
 initial_lio_pose_variances: [0.01, 0.01, 0.04, 0.0025, 0.0025, 0.0025]
 ```
 
-位置方差单位m²、角度rad²、速度(m/s)²。10000 m²是刻意弱化位置的试验权重，不能解释为实测精度；轮速标准差调参值从0.05降为0.02 m/s。转弯降权仍为`min(25,1+(omega/0.30)^2)`，不融合轮速角速度。运行XYZ同等弱化，不能只弱化世界X，否则走廊方向改变就失效。此版不是方向退化检测，也未加入车体横向零速伪观测。
+位置方差单位m²、角度rad²、速度(m/s)²。1000000 m²是刻意近乎关闭运行位置纠偏的试验权重，不能解释为实测精度；本轮重点测试轮速积分加LIO姿态，正常场景也会失去大部分LIO平移纠偏能力。轮速标准差调参值从0.05降为0.02 m/s。转弯降权仍为`min(25,1+(omega/0.30)^2)`，不融合轮速角速度。运行XYZ同等弱化，不能只弱化世界X，否则走廊方向改变就失效。此版不是方向退化检测，也未加入车体横向零速伪观测。
 
 首个ROS发布消息可能早于EKF订阅者连接，因此不能以“已经发布一帧”作为初始化成功；以guard收到接近LIO位姿的EKF输出为准。原点先验只定义初始坐标的不确定性，不证明初始绝对位置正确。初始化后不使用轮速pose，驱动累计位置归零不会拉回融合原点。
 
@@ -640,6 +640,7 @@ python3 src/scout_odom_fusion/test/test_isolated_ekf.py --profile baseline
 python3 src/scout_odom_fusion/test/test_isolated_ekf.py --profile wheel_priority --yaw-deg 90 --lio-scale 0.2
 python3 src/scout_odom_fusion/test/test_isolated_ekf.py --profile wheel_priority --yaw-deg 37 --turn-rate 0.1 --lio-scale 0.2
 python3 src/scout_odom_fusion/test/test_isolated_ekf.py --profile wheel_priority --yaw-deg -125 --speed -0.2 --lio-scale 0.2
+python3 src/scout_odom_fusion/test/test_isolated_ekf.py --profile wheel_priority --yaw-deg 90 --lio-scale 0.2 --duration 60
 ```
 
 私有master默认11431，占用则拒绝，可用`--port 11432`指定另一个空闲端口。测试从不向11311发送数据。合成轨迹通过只证明实现和给定条件下的行为；真实长管廊、打滑及航向误差仍需实测。

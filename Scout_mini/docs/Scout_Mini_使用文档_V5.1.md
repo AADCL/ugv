@@ -357,6 +357,7 @@ rosrun scout_system_bringup scout_fusion_test.py
 每次先结束上一轮测试，再启动另一配置。正式建图/定位入口及独立`fusion.launch`仍默认`baseline`，导航参数和输入不变。
 
 新版强化车体前向轮速，弱化FAST-LIO的XYZ位置观测，继续使用其三维姿态。
+本轮位置权重设得极弱，主要用于验证“轮速积分＋LIO姿态”，正常环境下也会牺牲LIO平移纠偏能力，不自动识别是否进入走廊。
 前向指当前`base_link`的X轴，绝不是上电时`odom`的X轴：水平情况下，世界速度为
 `vx_odom = v_forward*cos(yaw)`、`vy_odom = v_forward*sin(yaw)`；坡道按完整三维姿态转换。
 所以可以先转向再进入任意方向的走廊，倒车保留负速度。轮速累计位置和航向不参与融合。
