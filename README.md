@@ -41,6 +41,8 @@ V5.1技术统一命名为 **BATF-Nav**，英文展开为 **Bayesian Accumulation
 
 仓库保存项目适配层、必要底盘源码和文档，不重复镜像 FAST-LIO、Livox 驱动/SDK、Patchwork++ 或相机驱动等上游仓库。安装、固定版本、编译、启动与测试步骤以各项目文档为准。
 
+Scout另提供[官方R³LIVE独立试验分支](Scout_mini/optional/r3live/)，用于比较激光/惯性/视觉局部估计，保留原FAST-LIO和导航入口。该分支不是R³LIVE++，外参仍需标定；不改变WheelTech配置或BATF-Nav正式地图流程。
+
 禁止提交私钥、密码、Token、地图、PCD、rosbag、运行日志以及 `build/`、`devel/` 等生成文件。
 
 ## 版权声明

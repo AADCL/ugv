@@ -658,3 +658,94 @@ python3 src/scout_odom_fusion/test/test_isolated_ekf.py --profile wheel_priority
 | wheel_priority倒车 | yaw=-125°，速度-0.2 m/s，10秒，LIO报告20%距离 | 终点误差约0.045 m |
 
 各场景均通过非零世界原点、80 ms LIO延迟、轮速累计位置中途归零、输出时间戳单调、不发布TF及断流停止检查。guard共10项、比较数学共4项单元测试通过。测试包含启动时短暂未接收轮速的误差，数值不代表标定精度；没有模拟轮胎打滑和LIO姿态失真，也未替代真实走廊验收。
+
+## 独立 R³LIVE：从源码到编译、启动和验证
+
+本节新增可选工作空间，不改 `~/livox_fastlio/src` 中的 FAST-LIO、融合、地图或导航包。项目适配源码完整保存在仓库 `Scout_mini/optional/r3live/`；上游代码由固定提交加完整补丁复现，不用文档片段代替源码。采用官方 R³LIVE，不把论文补充材料当成已经公开的 R³LIVE++ 实现。
+
+### 1. 版本和依赖
+
+| 组件 | 固定来源/提交 | 作用 |
+|---|---|---|
+| R³LIVE | `https://github.com/hku-mars/r3live.git`，`6143a38537f28cb36eb24e9bbe2e39c8f7967157` | 激光/惯性/视觉局部估计 |
+| vision_opencv | `https://github.com/ros-perception/vision_opencv.git`，`cfabf72fb02970a661b5e68fbee503c5d9f94729` | 在独立overlay中重编译cv_bridge和image_geometry |
+| Livox | 复用已安装的livox_ros_driver2及Mid-360配置 | CustomMsg、IMU输入 |
+| 相机 | `~/realsense_ws` 内的realsense2_camera | D435i彩色图像和出厂内参 |
+| 平台 | Ubuntu20.04、Noetic、ARM64、OpenCV4.5.4、Eigen3、PCL、Boost.Python、Python3 numpy/yaml | 保留端侧现有依赖，不替换系统库 |
+
+端侧原 `/opt/ros/noetic` 的cv_bridge链接OpenCV4.2，与本机OpenCV4.5不一致。必须使用新overlay的cv_bridge；直接source旧工作空间后运行新二进制可能重新混用版本。可选CGAL网格重建未启用，核心定位不需要因此安装CGAL。
+
+### 2. 文件逐项落地
+
+以下路径均相对 `Scout_mini/optional/r3live/`；表内简写的`config/`、`launch/`、`scripts/`均位于其`scout_r3live_bringup/`下。需要修改时编辑对应完整文件，重新执行安装脚本并编译；配置和launch修改无需重编译C++。
+
+| 文件 | 写入内容与责任 |
+|---|---|
+| `install_scout_r3live.sh` | 创建独立workspace，固定上游提交，检查并应用补丁，复制自有包，串行编译；遇到不同提交的脏目录拒绝覆盖 |
+| `scout-r3live.patch` | 所有上游修改的完整统一diff，保留上游许可；不能只应用其中一部分 |
+| `start_scout_r3live.sh` | source独立overlay，补回相机包/plugin搜索路径，执行独立launch |
+| `scout_r3live_bringup/package.xml`、`CMakeLists.txt` | 自有ROS包依赖、Python可执行脚本、launch/config安装 |
+| `config/rig.yaml` | `T_base_imu`、`T_base_camera_link`，xyz单位m、RPY单位度，明确标记为近似安装尺寸 |
+| `config/estimator.yaml` | Mid-360前端、LIO、VIO公共参数；实际相机K/D和外参由启动器生成 |
+| `launch/scout_r3live.launch` | 用户入口、check_only和传感器开关、日志目录参数 |
+| `launch/sensors.launch` | Mid-360驱动与D435i彩色640×480@15Hz；关闭深度、红外、相机IMU、相机点云 |
+| `launch/estimator.launch` | 加载完整运行配置，启动前端和估计器，隔离输出话题 |
+| `scripts/session.py` | 冲突检查、等待真实传感器和相机TF、生成运行快照、等待两路位姿、维护并退出自己创建的进程 |
+| `test_frontend.py` | 私有master下验证360°、非法点过滤、时间和畸形消息拒绝 |
+| `test_camera_config.py` | 验证真实图像/内参/光学TF并生成回放配置，写到`/tmp` |
+| `test_observe.py` | 回放位姿有限值、四元数、帧名和时间单调检查；不输出定位精度结论 |
+
+补丁修改的上游文件相对 `~/r3live_ws/src/r3live/r3live/`：
+
+| 上游文件 | 必须写入的适配内容 |
+|---|---|
+| `CMakeLists.txt`、`package.xml` | C++14、ARM不使用x86 SSE编译选项、driver2/cv_bridge依赖、CGAL可选 |
+| `src/optical_flow/lkpyramid.hpp`、`.cpp` | 去掉强制SSE开关；x86特有实现条件编译，ARM使用已有通用路径 |
+| `src/tools/tools_logger.hpp` | CPUID仅在x86调用；ARM不执行x86诊断指令 |
+| `src/loam/LiDAR_front_end.cpp` | 新增type4 Mid-360 CustomMsg处理，球形盲区、line/tag/有限性检查，ns转ms，不沿用Avia前向裁剪 |
+| `src/loam/include/common_lib.h`、`src/r3live.cpp` | 激光到IMU平移由单一定义共享，替代每个编译单元独有的Avia常量 |
+| `src/r3live.hpp` | 在线程前加载外参平移、收敛消息队列长度 |
+| `src/r3live_lio.cpp` | `r3live_world→r3live_imu`，里程计/路径/TF使用测量时间，路径头与轨迹帧一致 |
+| `src/r3live_vio.cpp` | 默认无窗口无键盘等待、独立输出帧、相机位姿使用源时间、RGB地图独立话题 |
+
+### 3. 安装与编译
+
+```bash
+cd ~/github_upload/ugv
+bash Scout_mini/optional/r3live/install_scout_r3live.sh
+```
+
+若HTTPS网络不可达，可先用本机已配置的GitHub SSH方式克隆到脚本指定目录，再执行脚本；不要在仓库中写入密钥或密码。核心编译命令为：
+
+```bash
+source /opt/ros/noetic/setup.bash
+source ~/livox_fastlio/devel/setup.bash
+cd ~/r3live_ws
+catkin_make -j1 -DCMAKE_BUILD_TYPE=Release -DR3LIVE_BUILD_MESHING=OFF
+source devel/setup.bash
+ldd devel/lib/r3live/r3live_mapping | grep -E 'cv_bridge|opencv|not found'
+```
+
+`r3live_mapping`、`r3live_LiDAR_front_end`、cv_bridge、image_geometry及自有启动包应编译成功。ldd应指向`~/r3live_ws/devel/lib/libcv_bridge.so`，不得出现`not found`或同时加载OpenCV4.2与4.5。源码补丁完整重应用会触发较长编译；Jetson使用`-j1`。
+
+### 4. 坐标与标定代码约定
+
+`rig.yaml`的transform均为“子坐标点变换到父坐标”。初值沿用Scout现有安装配置：base→IMU `[0.25,0,0.20]m`、pitch45°；base→camera_link `[0.27,0,0.10]m`。D435i自身camera_link到彩色光学坐标的变换从驱动读取，不手写轴交换矩阵。
+
+启动器实际计算：`T_imu_optical = inverse(T_base_imu) * T_base_camera_link * T_camera_link_optical`；将旋转行优先展平写入`r3live_vio/camera_ext_R`，平移写入`camera_ext_t`。相机K、D、宽高来自同一彩色流的CameraInfo。上游使用`T_world_camera=T_world_imu*T_imu_camera`，不要把外参取反。
+
+Mid-360内部雷达→IMU平移为`[-0.011,-0.02329,0.04412]m`，沿用当前FAST-LIO配置，旋转单位阵。它与底盘安装45°、相机外参是三件不同的事。源图像/IMU时间相差超过1秒拒绝启动，只是时钟粗检，不等于毫秒级时间标定。在线内外参估计默认关闭，不能用它掩盖未标定的初值。
+
+### 5. 分层验证与限制
+
+真实启动按使用文档的一条命令完成。已有FAST-LIO运行时，check_only必须报告冲突且不能关闭原节点。隔离回放使用另外的ROS master，只播放白名单`/livox/lidar`、`/livox/imu`，不要回放底盘指令或旧TF。
+
+前端合成测试需要在私有master加载`Lidar_front_end/lidar_type=4`、`point_step=1`、`N_SCANS=4`、`blind=0.5`，启动前端并把`/laser_cloud_flat`重映射为`/r3live/laser_cloud_flat`，然后运行`python3 test_frontend.py`。它检查120个后向点保留、近点/NaN/非法tag和line剔除、11.9ms末点时间以及非法point_num拒绝。
+
+相机测试通过`sensors.launch start_lidar:=false`和`test_camera_config.py`读取真实工厂内参，生成`/tmp/scout_r3live_test_runtime.yaml`。关闭相机测试后，设置私有master的`use_sim_time=true`，启动`estimator.launch runtime_config:=/tmp/scout_r3live_test_runtime.yaml`及`test_observe.py`，再播放bag。后台rosbag play应重定向stdin为`/dev/null`，避免被终端读输入挂起。测试结束只退出这个master的进程。
+
+必须区分：编译成功、输出正常、视觉参与更新、定位精度达标是四个不同验收层级。无同步图像的旧走廊bag只能测试LIO；短时彩色图像测试也不能代替长走廊、暗光、扬尘和真实外参标定验收。当前不发布`map→odom`，不替换导航输入，不提供轮速接管，不将R³LIVE输出直接送入现有地图finalize流程。
+
+2026-09-10端侧验证：ARM64串行编译、OpenCV单版本运行时链接、Mid-360转换合成测试、真实D435i内参/图像/内部TF、已有FAST-LIO冲突拒绝、空闲私有master预检查均通过。旧走廊bag输出422帧有效LIO里程计；最终独立入口联合回放收到178帧里程计、264帧相机位姿和264帧跟踪图像，路径帧和时间检查通过。日志中视觉跟踪点约105～130，几何和光度更新返回成功。这些是短时功能测试，不是精度、运动、掉线降级或长期内存验收。R³LIVE累积地图可能持续增长，长时运行需另测资源占用。
+
+完整测试依据和复现步骤见[`../optional/r3live/TEST_REPORT_20260910.md`](../optional/r3live/TEST_REPORT_20260910.md)。几何/光度返回状态是上游函数返回值，不等于外参或轨迹已正确。现场保留的测试bag和日志不上传GitHub。

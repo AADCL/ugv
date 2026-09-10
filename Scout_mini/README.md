@@ -22,6 +22,8 @@ Scout Mini 项目运行于 Ubuntu 20.04 / ROS Noetic，硬件包括 AgileX Scout
 
 ## 当前功能
 
+可选局部估计试验：新增官方 **R³LIVE**（非R³LIVE++）的ARM64/Mid-360/D435i适配，独立于FAST-LIO入口。源码、固定版本及安装脚本位于[`optional/r3live`](optional/r3live/)，设备入口为`~/r3live_ws/start_scout_r3live.sh`。详见三大文档的R³LIVE章节；当前外参为安装初值，未接入导航，不代表长走廊精度已验收。
+
 - Scout CAN 通信、`/cmd_vel` 控制和 `/scout/odom` 轮速里程计；
 - Livox Mid-360 与 FAST-LIO 激光惯性里程计；
 - 新增FAST-LIO位姿＋Scout前向轮速的旁路EKF，发布`/scout/fused_odom`，保留旧话题与TF；建图/定位入口自动启动，尚不接管导航，详见三大文档的旁路融合章节；

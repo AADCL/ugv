@@ -1,0 +1,30 @@
+Lidar_front_end:
+  lidar_type: 4  # Scout patch: Mid-360 CustomMsg from livox_ros_driver2
+  N_SCANS: 4
+  blind: 0.5
+  point_step: 3
+  using_raw_point: 1
+r3live_common:
+  enable_gui: false
+  record_offline_map: 0
+  pub_pt_minimum_views: 3
+  minimum_pts_size: 0.10
+  image_downsample_ratio: 1
+  estimate_i2c_extrinsic: 0
+  estimate_intrinsic: 0
+  maximum_vio_tracked_pts: 300
+  maximum_image_buffer: 5
+  append_global_map_point_step: 4
+  tracker_minimum_depth: 0.5
+  tracker_maximum_depth: 30.0
+r3live_lio:
+  lidar_to_imu_translation: [-0.011, -0.02329, 0.04412]
+  lio_update_point_step: 4
+  max_iteration: 3
+  lidar_time_delay: 0.0
+  voxel_downsample_size_surf: 0.3
+  voxel_downsample_size_axis_z: 0.3
+  filter_size_map: 0.3
+  fov_degree: 360.0
+  publish_feature_map: false
+# r3live_vio is generated from this camera's CameraInfo and the rig transform.

@@ -1,0 +1,21 @@
+<launch>
+  <arg name="start_lidar" default="true" />
+  <arg name="start_camera" default="true" />
+  <include if="$(arg start_lidar)" file="$(find livox_ros_driver2)/launch_ROS1/msg_MID360.launch" />
+  <include if="$(arg start_camera)" file="$(find realsense2_camera)/launch/rs_camera.launch">
+    <arg name="camera" value="r3live_camera" />
+    <arg name="enable_color" value="true" />
+    <arg name="color_width" value="640" />
+    <arg name="color_height" value="480" />
+    <arg name="color_fps" value="15" />
+    <arg name="enable_depth" value="false" />
+    <arg name="enable_infra1" value="false" />
+    <arg name="enable_infra2" value="false" />
+    <arg name="enable_accel" value="false" />
+    <arg name="enable_gyro" value="false" />
+    <arg name="enable_pointcloud" value="false" />
+    <arg name="align_depth" value="false" />
+    <arg name="publish_tf" value="true" />
+    <arg name="tf_prefix" value="r3live_camera" />
+  </include>
+</launch>

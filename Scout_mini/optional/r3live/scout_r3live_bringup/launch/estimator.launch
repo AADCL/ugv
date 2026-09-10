@@ -1,0 +1,25 @@
+<launch>
+  <arg name="runtime_config" />
+  <rosparam command="load" file="$(arg runtime_config)" />
+  <param name="LiDAR_pointcloud_topic" value="/r3live/laser_cloud_flat" />
+  <param name="IMU_topic" value="/livox/imu" />
+  <param name="Image_topic" value="/r3live_camera/color/image_raw" />
+  <node pkg="r3live" type="r3live_LiDAR_front_end" name="r3live_lidar_front_end" output="screen" required="true">
+    <remap from="/laser_cloud" to="/r3live/laser_cloud" />
+    <remap from="/laser_cloud_flat" to="/r3live/laser_cloud_flat" />
+    <remap from="/laser_cloud_sharp" to="/r3live/laser_cloud_sharp" />
+  </node>
+  <node pkg="r3live" type="r3live_mapping" name="r3live_mapping" output="screen" required="true">
+    <remap from="/cloud_registered" to="/r3live/cloud_registered" />
+    <remap from="/cloud_effected" to="/r3live/cloud_effected" />
+    <remap from="/Laser_map" to="/r3live/laser_map" />
+    <remap from="/aft_mapped_to_init" to="/r3live/odometry" />
+    <remap from="/track_img" to="/r3live/track_image" />
+    <remap from="/raw_in_img" to="/r3live/raw_image" />
+    <remap from="/track_pts" to="/r3live/track_points" />
+    <remap from="/render_pts" to="/r3live/render_points" />
+    <remap from="/path" to="/r3live/path" />
+    <remap from="/camera_odom" to="/r3live/camera_odometry" />
+    <remap from="/camera_path" to="/r3live/camera_path" />
+  </node>
+</launch>

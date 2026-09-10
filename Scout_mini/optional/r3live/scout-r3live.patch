@@ -1,0 +1,550 @@
+diff --git a/r3live/CMakeLists.txt b/r3live/CMakeLists.txt
+index 851d17a..cc5342a 100644
+--- a/r3live/CMakeLists.txt
++++ b/r3live/CMakeLists.txt
+@@ -3,7 +3,10 @@ project(r3live)
+ 
+ set(CMAKE_BUILD_TYPE "Release")
+ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
+-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -std=c++14 -O3 -lboost_system -msse2 -msse3 -pthread -Wenum-compare") # -Wall
++set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -std=c++14 -O2 -pthread -Wenum-compare")
++if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|i.86)$")
++  add_compile_options(-msse2 -msse3)
++endif()
+ set(CMAKE_CXX_STANDARD 14)
+ set(CMAKE_CXX_STANDARD_REQUIRED ON)
+ set(CMAKE_CXX_EXTENSIONS OFF)
+@@ -25,7 +28,7 @@ find_package(catkin REQUIRED COMPONENTS
+                     nav_msgs
+                     tf
+                     cv_bridge
+-                    livox_ros_driver
++                    livox_ros_driver2
+             )
+ 
+ # find_package(Ceres REQUIRED)
+@@ -70,7 +73,7 @@ include_directories(
+   ${catkin_INCLUDE_DIRS}
+   ${EIGEN3_INCLUDE_DIR}
+   ${PCL_INCLUDE_DIRS}
+-  ${livox_ros_driver_INCLUDE_DIRS}
++  ${livox_ros_driver2_INCLUDE_DIRS}
+   ./src
+   ./src/loam/include
+   ./src/tools/
+@@ -122,8 +125,9 @@ target_link_libraries(r3live_mapping
+                           pcl_common 
+                           pcl_io) 
+ 
+-FIND_PACKAGE(CGAL REQUIRED)
+-if(CGAL_FOUND)
++option(R3LIVE_BUILD_MESHING "Build optional offline mesh reconstruction" OFF)
++if(R3LIVE_BUILD_MESHING)
++  FIND_PACKAGE(CGAL REQUIRED)
+ 	include_directories(${CGAL_INCLUDE_DIRS})
+ 	add_definitions(${CGAL_DEFINITIONS})
+ 	link_directories(${CGAL_LIBRARY_DIRS})
+diff --git a/r3live/package.xml b/r3live/package.xml
+index bc9c5c6..78f2d9b 100644
+--- a/r3live/package.xml
++++ b/r3live/package.xml
+@@ -8,10 +8,12 @@
+ 
+   <buildtool_depend>catkin</buildtool_depend>
+   <build_depend>roscpp</build_depend>
+-  <build_depend>livox_ros_driver</build_depend>
++  <build_depend>livox_ros_driver2</build_depend>
++  <build_depend>cv_bridge</build_depend>
+ 
+   <run_depend>catkin</run_depend>
+   <run_depend>roscpp</run_depend>
+-  <run_depend>livox_ros_driver</run_depend>
++  <run_depend>livox_ros_driver2</run_depend>
++  <run_depend>cv_bridge</run_depend>
+ 
+ </package>
+diff --git a/r3live/src/loam/LiDAR_front_end.cpp b/r3live/src/loam/LiDAR_front_end.cpp
+index 3625fd8..9309a77 100644
+--- a/r3live/src/loam/LiDAR_front_end.cpp
++++ b/r3live/src/loam/LiDAR_front_end.cpp
+@@ -1,7 +1,8 @@
+ #include <ros/ros.h>
+ #include <pcl_conversions/pcl_conversions.h>
+ #include <sensor_msgs/PointCloud2.h>
+-#include <livox_ros_driver/CustomMsg.h>
++#include <livox_ros_driver2/CustomMsg.h>
++#include <cmath>
+ #include "../tools/tools_logger.hpp"
+ 
+ using namespace std;
+@@ -17,7 +18,8 @@ enum LID_TYPE
+     MID,
+     HORIZON,
+     VELO16,
+-    OUST64
++    OUST64,
++    MID360
+ };
+ 
+ enum Feature
+@@ -79,7 +81,8 @@ int    point_filter_num;
+ int    g_if_using_raw_point = 1;
+ int    g_LiDAR_sampling_point_step = 3;
+ void   mid_handler( const sensor_msgs::PointCloud2::ConstPtr &msg );
+-void   horizon_handler( const livox_ros_driver::CustomMsg::ConstPtr &msg );
++void   horizon_handler( const livox_ros_driver2::CustomMsg::ConstPtr &msg );
++void   mid360_handler( const livox_ros_driver2::CustomMsg::ConstPtr &msg );
+ void   velo16_handler( const sensor_msgs::PointCloud2::ConstPtr &msg );
+ void   oust64_handler( const sensor_msgs::PointCloud2::ConstPtr &msg );
+ void   give_feature( pcl::PointCloud< PointType > &pl, vector< orgtype > &types, pcl::PointCloud< PointType > &pl_corn,
+@@ -135,6 +138,12 @@ int main( int argc, char **argv )
+         sub_points = n.subscribe( "/livox/lidar", 1000, horizon_handler, ros::TransportHints().tcpNoDelay() );
+         break;
+ 
++    case MID360:
++        if (g_LiDAR_sampling_point_step < 1 || blind < 0 || N_SCANS < 1)
++            throw std::runtime_error("Invalid Mid-360 preprocessing parameters");
++        sub_points = n.subscribe("/livox/lidar", 20, mid360_handler, ros::TransportHints().tcpNoDelay());
++        break;
++
+     case VELO16:
+         printf( "VELO16\n" );
+         sub_points = n.subscribe( "/velodyne_points", 1000, velo16_handler, ros::TransportHints().tcpNoDelay() );
+@@ -191,7 +200,31 @@ void   mid_handler( const sensor_msgs::PointCloud2::ConstPtr &msg )
+     pub_func( pl_corn, pub_corn, msg->header.stamp );
+ }
+ 
+-void horizon_handler( const livox_ros_driver::CustomMsg::ConstPtr &msg )
++void mid360_handler(const livox_ros_driver2::CustomMsg::ConstPtr &msg)
++{
++    if (msg->point_num != msg->points.size() || msg->header.stamp.isZero())
++        return;
++    pcl::PointCloud<PointType> cloud;
++    cloud.reserve(msg->points.size() / g_LiDAR_sampling_point_step + 1);
++    for (size_t i = 0; i < msg->points.size(); i += g_LiDAR_sampling_point_step)
++    {
++        const auto &p = msg->points[i];
++        if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z) ||
++            p.line >= N_SCANS || (p.tag & 0x30) > 0x10 ||
++            p.x*p.x + p.y*p.y + p.z*p.z < blind*blind)
++            continue;
++        PointType point{};
++        point.x=p.x; point.y=p.y; point.z=p.z;
++        point.intensity=p.reflectivity;
++        point.curvature=p.offset_time*1e-6; // ns -> ms; retain per-point acquisition time
++        cloud.push_back(point);
++    }
++    // Mid-360 is 360 degrees: do not apply Avia's forward-X > 0.7 filter.
++    if (cloud.size() >= 100)
++        pub_func(cloud, pub_surf, msg->header.stamp);
++}
++
++void horizon_handler( const livox_ros_driver2::CustomMsg::ConstPtr &msg )
+ {
+     double                                 t1 = omp_get_wtime();
+     vector< pcl::PointCloud< PointType > > pl_buff( N_SCANS );
+diff --git a/r3live/src/loam/include/common_lib.h b/r3live/src/loam/include/common_lib.h
+index 4ee294f..e92f982 100644
+--- a/r3live/src/loam/include/common_lib.h
++++ b/r3live/src/loam/include/common_lib.h
+@@ -58,7 +58,7 @@ static const Eigen::Matrix3f Eye3f(Eigen::Matrix3f::Identity());
+ static const Eigen::Vector3d Zero3d(0, 0, 0);
+ static const Eigen::Vector3f Zero3f(0, 0, 0);
+ // Eigen::Vector3d Lidar_offset_to_IMU(0.05512, 0.02226, 0.0297); // Horizon
+-static const Eigen::Vector3d Lidar_offset_to_IMU(0.04165, 0.02326, -0.0284); // Avia
++extern Eigen::Vector3d Lidar_offset_to_IMU; // configured once before processing threads
+ 
+ struct Pose6D
+ {
+diff --git a/r3live/src/optical_flow/lkpyramid.cpp b/r3live/src/optical_flow/lkpyramid.cpp
+index d3cb41b..2f6ed66 100644
+--- a/r3live/src/optical_flow/lkpyramid.cpp
++++ b/r3live/src/optical_flow/lkpyramid.cpp
+@@ -236,14 +236,14 @@ inline void calculate_LK_optical_flow(const cv::Range &range, const Mat *prevImg
+         acctype iA11 = 0, iA12 = 0, iA22 = 0;
+         float A11, A12, A22;
+ 
+-// #if CV_SSE2
++#if CV_SSE2
+         __m128i qw0 = _mm_set1_epi32(iw00 + (iw01 << 16));
+         __m128i qw1 = _mm_set1_epi32(iw10 + (iw11 << 16));
+         __m128i z = _mm_setzero_si128();
+         __m128i qdelta_d = _mm_set1_epi32(1 << (W_BITS1 - 1));
+         __m128i qdelta = _mm_set1_epi32(1 << (W_BITS1 - 5 - 1));
+         __m128 qA11 = _mm_setzero_ps(), qA12 = _mm_setzero_ps(), qA22 = _mm_setzero_ps();
+-// #endif
++#endif
+ 
+         // extract the patch from the first image, compute covariation matrix of derivatives
+         int x, y;
+@@ -257,7 +257,7 @@ inline void calculate_LK_optical_flow(const cv::Range &range, const Mat *prevImg
+ 
+             x = 0;
+ 
+-            // #if CV_SSE2
++            #if CV_SSE2
+             for (; x <= winSize.width * cn - 4; x += 4, dsrc += 4 * 2, dIptr += 4 * 2)
+             {
+                 __m128i v00, v01, v10, v11, t0, t1;
+@@ -296,7 +296,7 @@ inline void calculate_LK_optical_flow(const cv::Range &range, const Mat *prevImg
+                 qA12 = _mm_add_ps(qA12, _mm_mul_ps(fx, fy));
+                 qA11 = _mm_add_ps(qA11, _mm_mul_ps(fx, fx));
+             }
+-            // #endif
++            #endif
+             for (; x < winSize.width * cn; x++, dsrc += 2, dIptr += 2)
+             {
+                 int ival = CV_DESCALE(src[x] * iw00 + src[x + cn] * iw01 +
+@@ -319,7 +319,7 @@ inline void calculate_LK_optical_flow(const cv::Range &range, const Mat *prevImg
+             }
+         }
+ 
+-        // #if CV_SSE2
++        #if CV_SSE2
+         float CV_DECL_ALIGNED(16) A11buf[4], A12buf[4], A22buf[4];
+         _mm_store_ps(A11buf, qA11);
+         _mm_store_ps(A12buf, qA12);
+@@ -327,7 +327,7 @@ inline void calculate_LK_optical_flow(const cv::Range &range, const Mat *prevImg
+         iA11 += A11buf[0] + A11buf[1] + A11buf[2] + A11buf[3];
+         iA12 += A12buf[0] + A12buf[1] + A12buf[2] + A12buf[3];
+         iA22 += A22buf[0] + A22buf[1] + A22buf[2] + A22buf[3];
+-        // #endif
++        #endif
+ 
+         A11 = iA11 * FLT_SCALE;
+         A12 = iA12 * FLT_SCALE;
+@@ -372,11 +372,11 @@ inline void calculate_LK_optical_flow(const cv::Range &range, const Mat *prevImg
+             iw11 = (1 << W_BITS) - iw00 - iw01 - iw10;
+             acctype ib1 = 0, ib2 = 0;
+             float b1, b2;
+-            // #if CV_SSE2
++            #if CV_SSE2
+             qw0 = _mm_set1_epi32(iw00 + (iw01 << 16));
+             qw1 = _mm_set1_epi32(iw10 + (iw11 << 16));
+             __m128 qb0 = _mm_setzero_ps(), qb1 = _mm_setzero_ps();
+-            // #endif
++            #endif
+ 
+             for (y = 0; y < winSize.height; y++)
+             {
+@@ -384,7 +384,7 @@ inline void calculate_LK_optical_flow(const cv::Range &range, const Mat *prevImg
+                 const deriv_type *Iptr = IWinBuf.ptr<deriv_type>(y);
+                 const deriv_type *dIptr = derivIWinBuf.ptr<deriv_type>(y);
+                 x = 0;
+-                // #if CV_SSE2
++                #if CV_SSE2
+                 for (; x <= winSize.width * cn - 8; x += 8, dIptr += 8 * 2)
+                 {
+                     __m128i diff0 = _mm_loadu_si128((const __m128i *)(Iptr + x)), diff1;
+@@ -413,7 +413,7 @@ inline void calculate_LK_optical_flow(const cv::Range &range, const Mat *prevImg
+                     qb0 = _mm_add_ps(qb0, _mm_cvtepi32_ps(v00));
+                     qb1 = _mm_add_ps(qb1, _mm_cvtepi32_ps(v11));
+                 }
+-                // #endif
++                #endif
+                 for (; x < winSize.width * cn; x++, dIptr += 2)
+                 {
+                     int diff = CV_DESCALE(Jptr[x] * iw00 + Jptr[x + cn] * iw01 +
+diff --git a/r3live/src/optical_flow/lkpyramid.hpp b/r3live/src/optical_flow/lkpyramid.hpp
+index 67143a6..391ce2e 100644
+--- a/r3live/src/optical_flow/lkpyramid.hpp
++++ b/r3live/src/optical_flow/lkpyramid.hpp
+@@ -4,7 +4,6 @@
+ #include "opencv2/highgui.hpp"
+ #include "opencv2/video/tracking.hpp"
+ #include "opencv2/imgproc.hpp"
+-#define CV_CPU_HAS_SUPPORT_SSE2 1
+ #define USING_OPENCV_TBB 1
+ #include "opencv2/core/hal/intrin.hpp"
+ #include "tools_logger.hpp"
+@@ -132,4 +131,4 @@ public:
+ 
+     int track_image(const cv::Mat & curr_img, const std::vector<cv::Point2f> & last_tracked_pts, std::vector<cv::Point2f> & curr_tracked_pts, 
+                     std::vector<uchar> & status, int opm_method = 3 ); // opm_method: [0] openCV parallel_body [1] openCV parallel for [2] Thread pool  
+-};
+\ No newline at end of file
++};
+diff --git a/r3live/src/r3live.cpp b/r3live/src/r3live.cpp
+index a8015f9..de02587 100644
+--- a/r3live/src/r3live.cpp
++++ b/r3live/src/r3live.cpp
+@@ -85,6 +85,7 @@ Dr. Fu Zhang < fuzhang@hku.hk >.
+ #include "tools_openCV_3_to_4.hpp"
+ 
+ Camera_Lidar_queue g_camera_lidar_queue;
++Eigen::Vector3d Lidar_offset_to_IMU(0.04165, 0.02326, -0.0284);
+ MeasureGroup Measures;
+ StatesGroup g_lio_state;
+ std::string data_dump_dir = std::string("/mnt/0B3B134F0B3B134F/color_temp_r3live/");
+diff --git a/r3live/src/r3live.hpp b/r3live/src/r3live.hpp
+index 97e32d7..59db36c 100644
+--- a/r3live/src/r3live.hpp
++++ b/r3live/src/r3live.hpp
+@@ -318,8 +318,8 @@ public:
+         pubLaserCloudEffect = m_ros_node_handle.advertise<sensor_msgs::PointCloud2>("/cloud_effected", 100);
+         pubLaserCloudMap = m_ros_node_handle.advertise<sensor_msgs::PointCloud2>("/Laser_map", 100);
+         pubOdomAftMapped = m_ros_node_handle.advertise<nav_msgs::Odometry>("/aft_mapped_to_init", 10);
+-        pub_track_img = m_ros_node_handle.advertise<sensor_msgs::Image>("/track_img",1000);
+-        pub_raw_img = m_ros_node_handle.advertise<sensor_msgs::Image>("/raw_in_img",1000);
++        pub_track_img = m_ros_node_handle.advertise<sensor_msgs::Image>("/track_img",2);
++        pub_raw_img = m_ros_node_handle.advertise<sensor_msgs::Image>("/raw_in_img",2);
+         m_pub_visual_tracked_3d_pts = m_ros_node_handle.advertise<sensor_msgs::PointCloud2>("/track_pts", 10);
+         m_pub_render_rgb_pts = m_ros_node_handle.advertise<sensor_msgs::PointCloud2>("/render_pts", 10);
+         pubPath = m_ros_node_handle.advertise<nav_msgs::Path>("/path", 10);
+@@ -344,12 +344,20 @@ public:
+             std::this_thread::sleep_for(std::chrono::milliseconds(1));
+         }
+ 
+-        sub_imu = m_ros_node_handle.subscribe(IMU_topic.c_str(), 2000000, &R3LIVE::imu_cbk, this, ros::TransportHints().tcpNoDelay());
+-        sub_pcl = m_ros_node_handle.subscribe(LiDAR_pointcloud_topic.c_str(), 2000000, &R3LIVE::feat_points_cbk, this, ros::TransportHints().tcpNoDelay());
+-        sub_img = m_ros_node_handle.subscribe(IMAGE_topic.c_str(), 1000000, &R3LIVE::image_callback, this, ros::TransportHints().tcpNoDelay());
+-        sub_img_comp = m_ros_node_handle.subscribe(IMAGE_topic_compressed.c_str(), 1000000, &R3LIVE::image_comp_callback, this, ros::TransportHints().tcpNoDelay());
++        sub_imu = m_ros_node_handle.subscribe(IMU_topic.c_str(), 2000, &R3LIVE::imu_cbk, this, ros::TransportHints().tcpNoDelay());
++        sub_pcl = m_ros_node_handle.subscribe(LiDAR_pointcloud_topic.c_str(), 20, &R3LIVE::feat_points_cbk, this, ros::TransportHints().tcpNoDelay());
++        sub_img = m_ros_node_handle.subscribe(IMAGE_topic.c_str(), 5, &R3LIVE::image_callback, this, ros::TransportHints().tcpNoDelay());
++        sub_img_comp = m_ros_node_handle.subscribe(IMAGE_topic_compressed.c_str(), 5, &R3LIVE::image_comp_callback, this, ros::TransportHints().tcpNoDelay());
+ 
+         m_ros_node_handle.getParam("/initial_pose", m_initial_pose);
++        std::vector<double> lidar_translation;
++        if (m_ros_node_handle.getParam("r3live_lio/lidar_to_imu_translation", lidar_translation))
++        {
++            if (lidar_translation.size()!=3 || !std::isfinite(lidar_translation[0]) ||
++                !std::isfinite(lidar_translation[1]) || !std::isfinite(lidar_translation[2]))
++                throw std::runtime_error("Invalid lidar_to_imu_translation");
++            Lidar_offset_to_IMU=Eigen::Vector3d(lidar_translation[0],lidar_translation[1],lidar_translation[2]);
++        }
+         m_pub_rgb_render_pointcloud_ptr_vec.resize(1e3);
+         // ANCHOR - ROS parameters
+         if ( 1 )
+diff --git a/r3live/src/r3live_lio.cpp b/r3live/src/r3live_lio.cpp
+index 4e04949..0a0a20e 100644
+--- a/r3live/src/r3live_lio.cpp
++++ b/r3live/src/r3live_lio.cpp
+@@ -494,7 +494,7 @@ int R3LIVE::service_LIO_update()
+ {
+     nav_msgs::Path path;
+     path.header.stamp = ros::Time::now();
+-    path.header.frame_id = "/world";
++    path.header.frame_id = "r3live_world";
+     /*** variables definition ***/
+     Eigen::Matrix< double, DIM_OF_STATES, DIM_OF_STATES > G, H_T_H, I_STATE;
+     G.setZero();
+@@ -642,7 +642,7 @@ int R3LIVE::service_LIO_update()
+                     pcl::toROSMsg( *featsFromMap, laserCloudMap );
+                     laserCloudMap.header.stamp = ros::Time::now(); // ros::Time().fromSec(last_timestamp_lidar);
+                     // laserCloudMap.header.stamp.fromSec(Measures.lidar_end_time); // ros::Time().fromSec(last_timestamp_lidar);
+-                    laserCloudMap.header.frame_id = "world";
++                    laserCloudMap.header.frame_id = "r3live_world";
+                     pubLaserCloudMap.publish( laserCloudMap );
+                 }
+ 
+@@ -960,7 +960,7 @@ int R3LIVE::service_LIO_update()
+                 pcl::toROSMsg( *laserCloudFullResColor, laserCloudFullRes3 );
+                 // laserCloudFullRes3.header.stamp = ros::Time::now(); //.fromSec(last_timestamp_lidar);
+                 laserCloudFullRes3.header.stamp.fromSec( Measures.lidar_end_time );
+-                laserCloudFullRes3.header.frame_id = "world"; // world; camera_init
++                laserCloudFullRes3.header.frame_id = "r3live_world"; // world; camera_init
+                 pubLaserCloudFullRes.publish( laserCloudFullRes3 );
+             }
+ 
+@@ -1004,7 +1004,7 @@ int R3LIVE::service_LIO_update()
+                 pcl::toROSMsg( *laserCloudFullResColor, laserCloudFullRes3 );
+                 // laserCloudFullRes3.header.stamp = ros::Time::now(); //.fromSec(last_timestamp_lidar);
+                 laserCloudFullRes3.header.stamp.fromSec( Measures.lidar_end_time ); //.fromSec(last_timestamp_lidar);
+-                laserCloudFullRes3.header.frame_id = "world";
++                laserCloudFullRes3.header.frame_id = "r3live_world";
+                 pubLaserCloudEffect.publish( laserCloudFullRes3 );
+             }
+ 
+@@ -1012,14 +1012,14 @@ int R3LIVE::service_LIO_update()
+             sensor_msgs::PointCloud2 laserCloudMap;
+             pcl::toROSMsg( *featsFromMap, laserCloudMap );
+             laserCloudMap.header.stamp.fromSec( Measures.lidar_end_time ); // ros::Time().fromSec(last_timestamp_lidar);
+-            laserCloudMap.header.frame_id = "world";
++            laserCloudMap.header.frame_id = "r3live_world";
+             pubLaserCloudMap.publish( laserCloudMap );
+ 
+             /******* Publish Odometry ******/
+             geometry_msgs::Quaternion geoQuat = tf::createQuaternionMsgFromRollPitchYaw( euler_cur( 0 ), euler_cur( 1 ), euler_cur( 2 ) );
+-            odomAftMapped.header.frame_id = "world";
+-            odomAftMapped.child_frame_id = "/aft_mapped";
+-            odomAftMapped.header.stamp = ros::Time::now(); // ros::Time().fromSec(last_timestamp_lidar);
++            odomAftMapped.header.frame_id = "r3live_world";
++            odomAftMapped.child_frame_id = "r3live_imu";
++            odomAftMapped.header.stamp = ros::Time().fromSec(Measures.lidar_end_time);
+             odomAftMapped.pose.pose.orientation.x = geoQuat.x;
+             odomAftMapped.pose.pose.orientation.y = geoQuat.y;
+             odomAftMapped.pose.pose.orientation.z = geoQuat.z;
+@@ -1040,10 +1040,10 @@ int R3LIVE::service_LIO_update()
+             q.setY( odomAftMapped.pose.pose.orientation.y );
+             q.setZ( odomAftMapped.pose.pose.orientation.z );
+             transform.setRotation( q );
+-            br.sendTransform( tf::StampedTransform( transform, ros::Time().fromSec( Measures.lidar_end_time ), "world", "/aft_mapped" ) );
++            br.sendTransform( tf::StampedTransform( transform, ros::Time().fromSec( Measures.lidar_end_time ), "r3live_world", "r3live_imu" ) );
+ 
+-            msg_body_pose.header.stamp = ros::Time::now();
+-            msg_body_pose.header.frame_id = "/camera_odom_frame";
++            msg_body_pose.header.stamp = odomAftMapped.header.stamp;
++            msg_body_pose.header.frame_id = "r3live_world";
+             msg_body_pose.pose.position.x = g_lio_state.pos_end( 0 );
+             msg_body_pose.pose.position.y = g_lio_state.pos_end( 1 );
+             msg_body_pose.pose.position.z = g_lio_state.pos_end( 2 );
+@@ -1053,7 +1053,7 @@ int R3LIVE::service_LIO_update()
+             msg_body_pose.pose.orientation.w = geoQuat.w;
+ 
+             /******* Publish Path ********/
+-            msg_body_pose.header.frame_id = "world";
++            msg_body_pose.header.frame_id = "r3live_world";
+             if ( frame_num > 10 )
+             {
+                 path.poses.push_back( msg_body_pose );
+diff --git a/r3live/src/r3live_vio.cpp b/r3live/src/r3live_vio.cpp
+index 71e98da..9ede350 100644
+--- a/r3live/src/r3live_vio.cpp
++++ b/r3live/src/r3live_vio.cpp
+@@ -494,9 +494,9 @@ void R3LIVE::publish_camera_odom( std::shared_ptr< Image_frame > &image, double
+     eigen_q            odom_q = image->m_pose_w2c_q;
+     vec_3              odom_t = image->m_pose_w2c_t;
+     nav_msgs::Odometry camera_odom;
+-    camera_odom.header.frame_id = "world";
+-    camera_odom.child_frame_id = "/aft_mapped";
+-    camera_odom.header.stamp = ros::Time::now(); // ros::Time().fromSec(last_timestamp_lidar);
++    camera_odom.header.frame_id = "r3live_world";
++    camera_odom.child_frame_id = "r3live_camera_optical";
++    camera_odom.header.stamp = ros::Time().fromSec(msg_time);
+     camera_odom.pose.pose.orientation.x = odom_q.x();
+     camera_odom.pose.pose.orientation.y = odom_q.y();
+     camera_odom.pose.pose.orientation.z = odom_q.z();
+@@ -508,7 +508,7 @@ void R3LIVE::publish_camera_odom( std::shared_ptr< Image_frame > &image, double
+ 
+     geometry_msgs::PoseStamped msg_pose;
+     msg_pose.header.stamp = ros::Time().fromSec( msg_time );
+-    msg_pose.header.frame_id = "world";
++    msg_pose.header.frame_id = "r3live_world";
+     msg_pose.pose.orientation.x = odom_q.x();
+     msg_pose.pose.orientation.y = odom_q.y();
+     msg_pose.pose.orientation.z = odom_q.z();
+@@ -516,7 +516,7 @@ void R3LIVE::publish_camera_odom( std::shared_ptr< Image_frame > &image, double
+     msg_pose.pose.position.x = odom_t( 0 );
+     msg_pose.pose.position.y = odom_t( 1 );
+     msg_pose.pose.position.z = odom_t( 2 );
+-    camera_path.header.frame_id = "world";
++    camera_path.header.frame_id = "r3live_world";
+     camera_path.poses.push_back( msg_pose );
+     pub_path_cam.publish( camera_path );
+ }
+@@ -541,7 +541,7 @@ void R3LIVE::publish_track_pts( Rgbmap_tracker &tracker )
+     sensor_msgs::PointCloud2 ros_pc_msg;
+     pcl::toROSMsg( pointcloud_for_pub, ros_pc_msg );
+     ros_pc_msg.header.stamp = ros::Time::now(); //.fromSec(last_timestamp_lidar);
+-    ros_pc_msg.header.frame_id = "world";       // world; camera_init
++    ros_pc_msg.header.frame_id = "r3live_world";       // world; camera_init
+     m_pub_visual_tracked_3d_pts.publish( ros_pc_msg );
+ }
+ 
+@@ -999,13 +999,13 @@ void R3LIVE::service_pub_rgb_maps()
+             {
+                 pub_idx_size = 0;
+                 pcl::toROSMsg( pc_rgb, ros_pc_msg );
+-                ros_pc_msg.header.frame_id = "world";       
++                ros_pc_msg.header.frame_id = "r3live_world";
+                 ros_pc_msg.header.stamp = ros::Time::now(); 
+                 if ( m_pub_rgb_render_pointcloud_ptr_vec[ cur_topic_idx ] == nullptr )
+                 {
+                     m_pub_rgb_render_pointcloud_ptr_vec[ cur_topic_idx ] =
+                         std::make_shared< ros::Publisher >( m_ros_node_handle.advertise< sensor_msgs::PointCloud2 >(
+-                            std::string( "/RGB_map_" ).append( std::to_string( cur_topic_idx ) ), 100 ) );
++                            std::string( "/r3live/RGB_map_" ).append( std::to_string( cur_topic_idx ) ), 2 ) );
+                 }
+                 m_pub_rgb_render_pointcloud_ptr_vec[ cur_topic_idx ]->publish( ros_pc_msg );
+                 std::this_thread::sleep_for( std::chrono::microseconds( sleep_time_aft_pub ) );
+@@ -1016,13 +1016,13 @@ void R3LIVE::service_pub_rgb_maps()
+ 
+         pc_rgb.resize( pub_idx_size );
+         pcl::toROSMsg( pc_rgb, ros_pc_msg );
+-        ros_pc_msg.header.frame_id = "world";       
++        ros_pc_msg.header.frame_id = "r3live_world";
+         ros_pc_msg.header.stamp = ros::Time::now(); 
+         if ( m_pub_rgb_render_pointcloud_ptr_vec[ cur_topic_idx ] == nullptr )
+         {
+             m_pub_rgb_render_pointcloud_ptr_vec[ cur_topic_idx ] =
+                 std::make_shared< ros::Publisher >( m_ros_node_handle.advertise< sensor_msgs::PointCloud2 >(
+-                    std::string( "/RGB_map_" ).append( std::to_string( cur_topic_idx ) ), 100 ) );
++                    std::string( "/r3live/RGB_map_" ).append( std::to_string( cur_topic_idx ) ), 2 ) );
+         }
+         std::this_thread::sleep_for( std::chrono::microseconds( sleep_time_aft_pub ) );
+         ros::spinOnce();
+@@ -1064,13 +1064,14 @@ void R3LIVE::publish_render_pts( ros::Publisher &pts_pub, Global_map &m_map_rgb_
+         }
+     }
+     pcl::toROSMsg( pc_rgb, ros_pc_msg );
+-    ros_pc_msg.header.frame_id = "world";       // world; camera_init
++    ros_pc_msg.header.frame_id = "r3live_world";       // world; camera_init
+     ros_pc_msg.header.stamp = ros::Time::now(); //.fromSec(last_timestamp_lidar);
+     pts_pub.publish( ros_pc_msg );
+ }
+ 
+ char R3LIVE::cv_keyboard_callback()
+ {
++    if (!m_ros_node_handle.param<bool>("r3live_common/enable_gui", false)) return 0;
+     char c = cv_wait_key( 1 );
+     // return c;
+     if ( c == 's' || c == 'S' )
+@@ -1092,7 +1093,8 @@ void R3LIVE::service_VIO_update()
+     op_track.m_maximum_vio_tracked_pts = m_maximum_vio_tracked_pts;
+     m_map_rgb_pts.m_minimum_depth_for_projection = m_tracker_minimum_depth;
+     m_map_rgb_pts.m_maximum_depth_for_projection = m_tracker_maximum_depth;
+-    cv::imshow( "Control panel", generate_control_panel_img().clone() );
++    if (m_ros_node_handle.param<bool>("r3live_common/enable_gui", false))
++        cv::imshow( "Control panel", generate_control_panel_img().clone() );
+     Common_tools::Timer tim;
+     cv::Mat             img_get;
+     while ( ros::ok() )
+@@ -1189,6 +1191,9 @@ void R3LIVE::service_VIO_update()
+         g_cost_time_logger.record( tim, "Vio_f2f" );
+         tim.tic( "Vio_f2m" );
+         res_photometric = vio_photometric( state_out, op_track, img_pose );
++        ROS_INFO_THROTTLE(2.0, "R3LIVE visual: tracked=%zu geometric=%d photometric=%d",
++                          op_track.m_map_rgb_pts_in_current_frame_pos.size(),
++                          int(res_esikf), int(res_photometric));
+         g_cost_time_logger.record( tim, "Vio_f2m" );
+         g_lio_state = state_out;
+         print_dash_board();
+diff --git a/r3live/src/tools/tools_logger.hpp b/r3live/src/tools/tools_logger.hpp
+index fe6e32d..8ccd73f 100644
+--- a/r3live/src/tools/tools_logger.hpp
++++ b/r3live/src/tools/tools_logger.hpp
+@@ -1007,13 +1007,15 @@ inline String get_current_folder()
+ #ifdef _MSC_VER
+ #include <intrin.h>
+ inline void CPUID( int CPUInfo[ 4 ], int level ) { __cpuid( CPUInfo, level ); }
+-#else
++#elif defined(__i386__) || defined(__x86_64__)
+ #include <cpuid.h>
+ inline void CPUID( int CPUInfo[ 4 ], int level )
+ {
+     unsigned *p( ( unsigned * ) CPUInfo );
+     __get_cpuid( ( unsigned & ) level, p + 0, p + 1, p + 2, p + 3 );
+ }
++#else
++inline void CPUID(int CPUInfo[4], int) { for (int i=0; i<4; ++i) CPUInfo[i]=0; }
+ #endif
+ 
+ inline CPUINFO GetCPUInfo_()
+@@ -1319,13 +1321,15 @@ inline String get_current_folder()
+ #ifdef _MSC_VER
+ #include <intrin.h>
+ inline void CPUID( int CPUInfo[ 4 ], int level ) { __cpuid( CPUInfo, level ); }
+-#else
++#elif defined(__i386__) || defined(__x86_64__)
+ #include <cpuid.h>
+ inline void CPUID( int CPUInfo[ 4 ], int level )
+ {
+     unsigned *p( ( unsigned * ) CPUInfo );
+     __get_cpuid( ( unsigned & ) level, p + 0, p + 1, p + 2, p + 3 );
+ }
++#else
++inline void CPUID(int CPUInfo[4], int) { for (int i=0; i<4; ++i) CPUInfo[i]=0; }
+ #endif
+ 
+ inline CPUINFO GetCPUInfo_()

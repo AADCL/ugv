@@ -1,0 +1,10 @@
+# Approximate installation geometry copied from Scout's existing TF configuration.
+# NOT a completed lidar-camera calibration. Input transforms map child -> parent.
+calibration_status: approximate_mount_geometry
+base_to_imu:
+  xyz: [0.25, 0.0, 0.20]
+  rpy_degrees: [0.0, 45.0, 0.0]
+base_to_camera_link:
+  xyz: [0.27, 0.0, 0.10]
+  rpy_degrees: [0.0, 0.0, 0.0]
+# Factory camera_link -> color optical transform and intrinsics are read at startup.

@@ -385,3 +385,37 @@ rosrun scout_system_bringup scout_fusion_test.py
 比较按同一时刻插值并分别计算`T_start^-1 * T_current`，完整三维旋转参与转换，不直接相减不同原点。出现断流、明显归零跳变或frame变化时显示INVALID并停止累计，不自动拼接新原点；此时只保存故障前有效结果，不会发送车辆停止指令，应由现场人员停车并重启测试。
 
 若只想观察已经运行的三路里程计而不启动任何硬件，可单独执行`rosrun scout_odom_fusion compare_odometry.py`，但必须自行确认没有重复对比节点；这不能保证当前系统中NDT已关闭。`scout_fusion_test.py --check-only`只执行启动前检查，不启动硬件。
+
+## 独立 R³LIVE 试验入口（2026-09-10）
+
+本入口是官方 **R³LIVE** 的 Scout/ARM64/Mid-360 适配版，不是 R³LIVE++。FAST-LIO 的原入口继续保留，按场景选一套运行。R³LIVE 使用自己的激光惯性与视觉估计，不是在当前 FAST-LIO 输出上再接一个相机节点。当前接入的是设备实连的 **D435i 彩色流**，不是奥比深度相机；本分支不使用深度图。
+
+先停车，退出原来拥有 FAST-LIO、雷达、轮速融合、NDT或导航的启动终端。新入口检测到这些节点会拒绝启动，不会替你关闭它们。然后执行：
+
+```bash
+~/r3live_ws/start_scout_r3live.sh
+```
+
+这一条命令启动 Mid-360、D435i 彩色流和 R³LIVE；自动读取相机内参、内部光学TF，生成本次运行配置，再启动估计器。保持静止，等待终端提示 `LIO and camera pose outputs received`，再由现场人员决定是否进行低速测试。该入口不启动底盘、遥控、NDT、轮速融合、地图转换或导航，也不会发布速度指令。
+
+只检查包、几何配置和节点冲突、不启动传感器：
+
+```bash
+~/r3live_ws/start_scout_r3live.sh check_only:=true
+```
+
+正常运行后，可在已加载独立环境的终端观察：
+
+```bash
+source ~/r3live_ws/devel/setup.bash
+rostopic hz /r3live/odometry
+rostopic hz /r3live/camera_odometry
+rostopic hz /r3live/track_image
+rosrun tf tf_echo r3live_world r3live_imu
+```
+
+RViz 的 Fixed Frame 设为 `r3live_world`，点云选 `/r3live/cloud_registered`，轨迹选 `/r3live/path`。这里是独立局部原点，里程计位置对应 **雷达IMU原点**，不是 `base_link`；不能直接与旧系统XY相减，也不能直接代替导航输入。相机驱动内部TF另成一棵树，当前没有把试验坐标系接入 `map/odom`。
+
+停车后 Ctrl+C。每次日志位于 `~/r3live_ws/logs/<日期时间_唯一后缀>/`：`sensors.log`、`estimator.log`、`runtime.yaml`、`rig_snapshot.yaml`、`sensor_snapshot.json`。默认不录原始bag，不保存可用于现有导航的地图，不启用上游离线网格重建；`output/` 是上游工作目录，不代表已经生成可用地图。
+
+**当前外参是安装尺寸初值，尚未完成相机—雷达空间和时间标定。** 内参来自真实相机，不能因此认为外参也准确。可以验证启动、图像跟踪和输出连续性；尚不能据此宣布比 FAST-LIO 精度高，或认为暗光、扬尘、无纹理走廊已经解决。配置文件及标定关系见开发文档新增章节；参数、全部试验话题与排错见详细信息表。原 BATF-Nav 的建图、保存和导航流程不变。
