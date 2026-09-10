@@ -646,3 +646,15 @@ python3 src/scout_odom_fusion/test/test_isolated_ekf.py --profile wheel_priority
 私有master默认11431，占用则拒绝，可用`--port 11432`指定另一个空闲端口。测试从不向11311发送数据。合成轨迹通过只证明实现和给定条件下的行为；真实长管廊、打滑及航向误差仍需实测。
 
 真车测试使用`rosrun scout_system_bringup scout_fusion_test.py --profile wheel_priority`，静止等待READY后再运动，停车后Ctrl+C保存。原版用`--profile baseline`。比较configuration.json中的实际参数，避免两轮配置混淆。保持原始话题、新输出和诊断；无新增TF。LIO完全失效仍锁止，不能宣称轮速已能独立接管；长期错误位置观测仍可能慢慢拉偏，姿态偏差也会直接旋转前向积分方向。
+
+2026-09-10在120端侧ROS Noetic私有master验证记录（合成数据，非真车精度）：
+
+| 配置/场景 | 条件 | 结果 |
+|---|---|---|
+| baseline正常LIO | yaw=90°，0.2 m/s，10秒 | 终点误差约0.004 m |
+| baseline位置退化对照 | 相同速度，LIO仅报告20%距离 | 约2 m真值得到0.428 m位移，终点误差约1.571 m |
+| wheel_priority长时间直行 | yaw=90°，0.2 m/s，60秒，LIO报告20%距离 | 约12 m真值得到11.933 m位移，终点误差约0.063 m |
+| wheel_priority斜向转弯 | 初始yaw=37°，转速0.1 rad/s，10秒，LIO报告20%距离 | 终点误差约0.045 m |
+| wheel_priority倒车 | yaw=-125°，速度-0.2 m/s，10秒，LIO报告20%距离 | 终点误差约0.045 m |
+
+各场景均通过非零世界原点、80 ms LIO延迟、轮速累计位置中途归零、输出时间戳单调、不发布TF及断流停止检查。guard共10项、比较数学共4项单元测试通过。测试包含启动时短暂未接收轮速的误差，数值不代表标定精度；没有模拟轮胎打滑和LIO姿态失真，也未替代真实走廊验收。
