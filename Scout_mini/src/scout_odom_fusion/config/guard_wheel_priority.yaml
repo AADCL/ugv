@@ -3,3 +3,6 @@
 # Variances are tuning assumptions, not calibrated sensor accuracy.
 lio_pose_variances: [100.0, 100.0, 100.0, 0.0025, 0.0025, 0.0025]
 wheel_speed_variance: 0.0004
+# Anchor the initial coordinate origin; weak subsequent translation must not
+# imply that the initial origin itself has 100 m^2 uncertainty.
+initial_lio_pose_variances: [0.01, 0.01, 0.04, 0.0025, 0.0025, 0.0025]

@@ -57,6 +57,7 @@ class CallbackTests(unittest.TestCase):
         n.world, n.body = 'odom', 'base_link'
         n.age, n.timeout, n.vmax, n.wmax = .3, .5, 2., 3.
         n.jump, n.angle_jump, n.pose_var = .3, .2, [.01]*6
+        n.initial_pose_var = [.01]*6
         n.speed_var, n.turn_scale, n.max_scale = .0025, .3, 25.
         n.lio, n.wheel, n.output = [g.StreamGate(.3, .05) for _ in range(3)]
         n.previous_pose, n.first_lio = None, None

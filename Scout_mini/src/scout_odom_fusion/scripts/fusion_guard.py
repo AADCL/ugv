@@ -66,14 +66,15 @@ class FusionGuard:
         self.jump = float(rospy.get_param('~lio_jump_margin_m', 0.30))
         self.angle_jump = float(rospy.get_param('~lio_jump_margin_rad', 0.20))
         self.pose_var = rospy.get_param('~lio_pose_variances', [0.01]*6)
+        self.initial_pose_var = rospy.get_param('~initial_lio_pose_variances', self.pose_var)
         self.speed_var = float(rospy.get_param('~wheel_speed_variance', 0.0025))
         self.turn_scale = float(rospy.get_param('~turn_scale_rad_s', 0.30))
         self.max_scale = float(rospy.get_param('~max_turn_variance_scale', 25.0))
         positive = [self.age, self.timeout, self.vmax, self.wmax, self.jump,
                     self.angle_jump, self.speed_var, self.turn_scale, self.max_scale]
-        if (len(self.pose_var) != 6 or not self.world or not self.body
+        if (len(self.pose_var) != 6 or len(self.initial_pose_var) != 6 or not self.world or not self.body
                 or not math.isfinite(future) or future < 0
-                or not all(math.isfinite(v) and v > 0 for v in positive + self.pose_var)):
+                or not all(math.isfinite(v) and v > 0 for v in positive + self.pose_var + self.initial_pose_var)):
             raise ValueError('Invalid fusion guard configuration')
         self.lio = StreamGate(self.age, future)
         self.wheel = StreamGate(self.age, future)
@@ -141,10 +142,11 @@ class FusionGuard:
                     self.fail('LIO gap/reset/jump; restart fusion.launch after checking source')
                     return
             self.previous_pose = copy.deepcopy(pose)
-            if self.first_lio is None:
+            first = self.first_lio is None
+            if first:
                 self.first_lio = stamp
             out = copy.deepcopy(msg)
-            out.pose.covariance = diagonal(self.pose_var)
+            out.pose.covariance = diagonal(self.initial_pose_var if first else self.pose_var)
             # Config excludes ALL LIO twist fields. Preserve input message on original topic.
             self.lio_pub.publish(out)
 
