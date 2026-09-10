@@ -18,6 +18,7 @@ def main():
     parser.add_argument('--speed', type=float, default=.2)
     parser.add_argument('--lio-scale', type=float, default=1.)
     parser.add_argument('--duration', type=float, default=10.)
+    parser.add_argument('--lio-delay', type=float, default=.08)
     args = parser.parse_args()
     yaw0 = math.radians(args.yaw_deg)
 
@@ -88,9 +89,9 @@ def main():
                 if step % 5 == 0:
                     lio = Odometry()
                     # LIO arrives 80 ms late; timestamp and trajectory agree.
-                    lio.header.stamp = stamp - rospy.Duration(.08)
+                    lio.header.stamp = stamp - rospy.Duration(args.lio_delay)
                     lio.header.frame_id, lio.child_frame_id = 'odom', 'base_link'
-                    dx, dy, angle = trajectory(max(0, elapsed-.08))
+                    dx, dy, angle = trajectory(max(0, elapsed-args.lio_delay))
                     lio.pose.pose.position.x = 10 + args.lio_scale*dx
                     lio.pose.pose.position.y = 20 + args.lio_scale*dy
                     lio.pose.pose.orientation.z = math.sin(angle/2)
@@ -100,6 +101,10 @@ def main():
                 time.sleep(.02)
             assert len(outputs) > 100, ('Too few outputs', len(outputs), log_dir)
             last = outputs[-1]
+            print('first=%s last=%s dt=%.3f first_xy=(%.4f, %.4f)' %
+                  (outputs[0].header.stamp,last.header.stamp,
+                   (last.header.stamp-outputs[0].header.stamp).to_sec(),
+                   outputs[0].pose.pose.position.x,outputs[0].pose.pose.position.y),flush=True)
             dx, dy, _ = trajectory(elapsed)
             error = math.hypot(last.pose.pose.position.x-10-dx, last.pose.pose.position.y-20-dy)
             print('RESULT xy=(%.4f, %.4f) expected=(%.4f, %.4f) body_v=(%.4f, %.4f) error=%.4f' %
