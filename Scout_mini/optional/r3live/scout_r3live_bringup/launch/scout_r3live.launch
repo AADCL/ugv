@@ -2,12 +2,14 @@
   <arg name="start_lidar" default="true" />
   <arg name="start_camera" default="true" />
   <arg name="check_only" default="false" />
+  <arg name="calibration_file" default="" />
   <arg name="rig_file" default="$(find scout_r3live_bringup)/config/rig.yaml" />
   <arg name="output_root" default="$(env HOME)/r3live_ws/logs" />
   <node pkg="scout_r3live_bringup" type="session.py" name="scout_r3live_session" output="screen" required="true">
     <param name="start_lidar" value="$(arg start_lidar)" />
     <param name="start_camera" value="$(arg start_camera)" />
     <param name="check_only" value="$(arg check_only)" />
+    <param name="calibration_file" value="$(arg calibration_file)" />
     <param name="rig_file" value="$(arg rig_file)" />
     <param name="output_root" value="$(arg output_root)" />
   </node>

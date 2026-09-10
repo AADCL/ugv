@@ -749,3 +749,35 @@ Mid-360内部雷达→IMU平移为`[-0.011,-0.02329,0.04412]m`，沿用当前FAS
 2026-09-10端侧验证：ARM64串行编译、OpenCV单版本运行时链接、Mid-360转换合成测试、真实D435i内参/图像/内部TF、已有FAST-LIO冲突拒绝、空闲私有master预检查均通过。旧走廊bag输出422帧有效LIO里程计；最终独立入口联合回放收到178帧里程计、264帧相机位姿和264帧跟踪图像，路径帧和时间检查通过。日志中视觉跟踪点约105～130，几何和光度更新返回成功。这些是短时功能测试，不是精度、运动、掉线降级或长期内存验收。R³LIVE累积地图可能持续增长，长时运行需另测资源占用。
 
 完整测试依据和复现步骤见[`../optional/r3live/TEST_REPORT_20260910.md`](../optional/r3live/TEST_REPORT_20260910.md)。几何/光度返回状态是上游函数返回值，不等于外参或轨迹已正确。现场保留的测试bag和日志不上传GitHub。
+
+## Scout端离线相机—雷达标定开发步骤
+
+源码目录`Scout_mini/optional/r3live/calibration/`，独立workspace `~/lidar_camera_calib_ws`。固定hku-mars/livox_camera_calib提交`061fdaa647fc806e59d73a8505a05a10dfcfdaa1`，依赖Ceres1.14（端侧安装版本）、PCL、Eigen、ROS Noetic及与R³LIVE overlay一致的C++ OpenCV/cv_bridge。Python图像直接解码rgb8/bgr8/mono8，避免在同一Python进程混入cv_bridge的另一版本OpenCV。
+
+完整新增程序和补丁都在仓库中，不需要手工拼接代码片段。按如下顺序落地：
+
+| 文件（相对optional/r3live） | 修改与职责 | 构建/检查 |
+|---|---|---|
+| calibration/install_calibration.sh | 固定版本、检查应用补丁、安装Ceres、复制工具和R³LIVE配置读取模块 | 在设备bash执行；拒绝覆盖不同提交的脏上游 |
+| calibration/scout-calibration.patch | CMake仅构建多场景工具；增加rosbag/Ceres include；上游显示调用改为无GUI保存；小于30匹配、边缘不足、不可用解拒绝；修复多场景粗搜索错误复用最后场景计数、优化遗漏k3、K近邻不足访问 | `catkin_make -j1 -DCMAKE_BUILD_TYPE=Release`，目标lidar_camera_multi_calib |
+| calibration/scout_calibrate.sh | 完整环境与CLI，source显式传--extend避免--help传入catkin环境脚本 | bash -n；--help |
+| calibration/calibrate.py | sensors、capture、export、prepare、solve、project、accept完整实现 | 实机静态capture/export、独立端口solve、投影与接受保护 |
+| scout_r3live_bringup/scripts/calibration_io.py | 矩阵SO(3)检查、内参/尺寸/帧一致性、接受文件读取、雷达到相机矩阵转IMU到相机使用方向 | test_geometry.py |
+| scout_r3live_bringup/scripts/session.py | 按calibration_file覆盖近似外参；校验实际相机和雷达帧，保存标定快照，不改默认值 | 原工作空间catkin_make -j1；旧FAST-LIO存在时仍拒绝R³LIVE启动 |
+| scout_r3live_bringup/launch/scout_r3live.launch、CMakeLists.txt | calibration_file参数，安装辅助模块 | XML/包检查 |
+| calibration/test_geometry.py | 几何方向/杆臂、坏矩阵、参数变更、未接受文件、PCD和名字约束 | python3执行，需脚本目录在PYTHONPATH |
+| calibration/test_synthetic_scene.py | 已知单位外参的多平面合成测试数据 | 输出到独立测试目录，不能作为实车标定 |
+
+部署及编译：
+
+```bash
+cd ~/github_upload/ugv
+bash Scout_mini/optional/r3live/calibration/install_calibration.sh
+~/r3live_ws/scout_calibrate.sh --help
+```
+
+采集导出约束：driver2 CustomMsg点数一致、源时间非零且单调；保持源雷达坐标和米单位；CameraInfo与原图配对；保留相机内部tf_static；旋转/可用轮速运动门限；最大250万有效输入点；过滤0.5m盲区/20m外点/NaN/tag/line；在初始相机视野外扩半幅范围裁剪并按2cm体素降采样。失败保留.incomplete，场景同名拒绝覆盖。此处理仅用于标定PCD，不修改FAST-LIO输入或正式建图。
+
+prepare建立训练副本和参数快照，统一K/D/帧，拒绝相同点云冒充多个场景。solve使用独立ROS master默认11441，端口占用拒绝，退出只清理其子进程；.solving存在时禁止验收。输出是`p_camera_optical=T_camera_lidar*p_lidar`，R³LIVE转换为`T_imu_camera=T_imu_lidar*inverse(T_camera_lidar)`。默认不发布新TF、不自动启用候选矩阵。project仅固定矩阵投影，近似深度/法向变化边缘距离不是实际外参误差。accept需要独立场景及显式人工确认，输出空间标定文件，不估计时间偏移。
+
+逐条操作、输出目录、恢复方式与全部参数边界见[标定工具完整说明](../optional/r3live/calibration/README.md)。需要改变C++时在固定上游工作树编辑并更新完整patch；只改Python/YAML/launch时重新部署对应完整文件即可。编译成功和合成通过均不代表真实场景精度通过。

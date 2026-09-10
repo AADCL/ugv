@@ -541,3 +541,41 @@ r3live_camera_link ──[RealSense内部TF]──> r3live_camera_color_frame
 | 7.RViz报世界帧错误 | Fixed Frame及实际消息header | 用r3live_world；不要把独立局部原点当作odom/map |
 | 8.图像卡顿或CPU过高 | 两路定位是否并开、实际帧率和图像队列 | 保持单入口运行；本版并未证明Jetson所有场景实时性 |
 | 9.能运行但轨迹漂 | 外参/时间标定、视觉跟踪、激光退化和实测基准 | 当前输出正常测试不能代替精度验收；不修改导航参数掩盖问题 |
+
+## 相机—雷达标定CLI、话题与保护
+
+统一入口：`~/r3live_ws/scout_calibrate.sh`。全局`--root PATH`必须放在子命令之前，默认`~/r3live_ws/calibration`。源码在optional/r3live/calibration，不属于原导航workspace。
+
+| 子命令 | 参数 | 输入/输出与边界 |
+|---|---|---|
+| sensors | 无 | 复用已有雷达/同名相机，只启动缺失驱动；调用现有sensors.launch，不启动底盘/估计器 |
+| capture | 场景名、--seconds默认6允许3..10、--stationary | 默认交互YES确认，原始bag＋导出BMP/PCD＋快照；不覆盖 |
+| export | 场景名、一个或多个bag、--seconds默认6、--stationary | 导入静止原始bag，取首个雷达时间起的指定时段；要求时间重叠、CameraInfo和相机tf_static |
+| prepare | run名、至少2个不同场景名（推荐3个） | 生成编号BMP/PCD副本、multi_calib.yaml、edges.yaml、manifest.yaml；不求解 |
+| solve | run名、--port默认11441、--timeout默认1800秒 | 私有ROS master，headless多场景C++求解器；日志和候选矩阵；不会启动或停止真实传感器 |
+| project | run名、场景名 | 固定候选矩阵生成projection.png/edges.png/report.yaml；无优化 |
+| accept | run名、--confirm-validation | 必须有独立投影并人工检查；写accepted_calibration.yaml，默认不启用 |
+| R³LIVE新参数 | calibration_file:=绝对路径，默认空 | 非空时读取接受文件并核验相机K/D/分辨率/帧和雷达帧、内部雷达IMU平移；不增加TF |
+
+| 采集话题 | 类型 | 读取者/用途 |
+|---|---|---|
+| /livox/lidar | livox_ros_driver2/CustomMsg | capture和export；源雷达坐标XYZ/reflectivity，非cloud_registered |
+| /livox/imu | sensor_msgs/Imu | capture/export检查旋转；角速度rad/s，加速度仍为g且未用于此空间求解 |
+| /r3live_camera/color/image_raw | sensor_msgs/Image | 清晰彩色原图，rgb8/bgr8/mono8支持；保存BMP |
+| /r3live_camera/color/camera_info | sensor_msgs/CameraInfo | K/D/尺寸/光学帧；必须plumb_bob五系数模型 |
+| /tf_static | tf2_msgs/TFMessage | 查找camera_link→color_optical；只读取，不发布 |
+| /scout/odom | nav_msgs/Odometry，可选 | 可用时检查速度；没有轮速不能证明平移静止 |
+
+临时节点：live capture创建匿名scout_calibration_capture和rosbag record节点，仅订阅。solve在私有master创建上游lidar_camera_multi_calib节点；上游广告rgb_cloud、init_rgb_cloud、planner_cloud、line_cloud、camera_image等诊断话题，全部限制在该私有master，不接入11311。离线导出和投影无需ROS master。
+
+| 限制/错误 | 意义与处理 |
+|---|---|
+| rotation/wheel motion | 角速度>0.035rad/s或可用轮速>0.02m/s，当前采集作废；人工停车后新名重录 |
+| stale sensor/clock | 实时必需流超过1秒未到或与墙钟相差>2秒；检查传感器，不改时间戳骗过检查 |
+| .incomplete/.solving | 场景导出或求解未成功；保留证据，用新场景/run名重做，不手动去掉标记当成功 |
+| insufficient edges/correspondences | 几何约束不足或初值不对；补三维边缘丰富场景，检查初始投影 |
+| camera/TF mismatch | 分辨率、K/D或frame不同；不能混用模式和安装条件 |
+| acceptance rejected | 无独立投影或未明确人工确认；先看验证图，不直接复制extrinsic.txt给R³LIVE |
+| 静态对齐、运动错位 | 空间标定未解决时间同步，另行检查；不要修改导航膨胀或控制参数 |
+
+capture检查不代替人工静止确认，也不能检测所有动态场景。标定PCD的2cm体素、0.5～20m距离和视野裁剪只属于本工具，与正式建图参数无关。使用、安装和逐文件开发细节见[标定说明](../optional/r3live/calibration/README.md)。

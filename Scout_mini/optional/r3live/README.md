@@ -17,3 +17,5 @@ bash Scout_mini/optional/r3live/install_scout_r3live.sh
 `scout-r3live.patch`只用于固定上游提交，保留原上游许可。`install_scout_r3live.sh`不覆盖已有不同版本的脏源码，不替换系统OpenCV/cv_bridge；默认关闭可选CGAL网格重建。新工作空间不放入主工程src，避免catkin包重名和覆盖原cv_bridge环境。
 
 `config/rig.yaml`的外参是安装尺寸初值。相机内参/内部光学TF启动时从设备读取。`/r3live/odometry`表示独立局部原点下的IMU位姿，不是车体位姿，不能直接替换原`/fastlio_odom`或导航TF。
+
+新增[Scout端相机—雷达标定工具](calibration/README.md)：静态采集、driver2导出、多场景无GUI求解、独立投影验证和显式接受。设备入口`~/r3live_ws/scout_calibrate.sh`。得到接受文件后，通过`calibration_file:=...`给独立R³LIVE使用；不会自动替换安装初值，不估计时间偏移。

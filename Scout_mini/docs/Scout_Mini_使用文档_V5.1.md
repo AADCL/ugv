@@ -419,3 +419,42 @@ RViz 的 Fixed Frame 设为 `r3live_world`，点云选 `/r3live/cloud_registered
 停车后 Ctrl+C。每次日志位于 `~/r3live_ws/logs/<日期时间_唯一后缀>/`：`sensors.log`、`estimator.log`、`runtime.yaml`、`rig_snapshot.yaml`、`sensor_snapshot.json`。默认不录原始bag，不保存可用于现有导航的地图，不启用上游离线网格重建；`output/` 是上游工作目录，不代表已经生成可用地图。
 
 **当前外参是安装尺寸初值，尚未完成相机—雷达空间和时间标定。** 内参来自真实相机，不能因此认为外参也准确。可以验证启动、图像跟踪和输出连续性；尚不能据此宣布比 FAST-LIO 精度高，或认为暗光、扬尘、无纹理走廊已经解决。配置文件及标定关系见开发文档新增章节；参数、全部试验话题与排错见详细信息表。原 BATF-Nav 的建图、保存和导航流程不变。
+
+## Scout端相机—雷达标定工具
+
+已增加独立`~/r3live_ws/scout_calibrate.sh`入口，按需复用现有雷达和相机，不关闭原定位。使用hku-mars/livox_camera_calib多场景算法；只需在几个有墙角、门框、柜子等真实三维边缘的地方停车采集，不用拆传感器或抬车，不使用印刷标定板纹理作为雷达边缘。
+
+终端A启动缺少的传感器：
+
+```bash
+~/r3live_ws/scout_calibrate.sh sensors
+```
+
+终端B在第一个位置停车、放开遥控、确认场景静止后执行，输入YES：
+
+```bash
+~/r3live_ws/scout_calibrate.sh capture scene_00
+```
+
+默认录制6秒并自动导出BMP/PCD，收到CAPTURE_OK后才能移动车辆。在不同位置依次采集scene_01、scene_02，另外采集validation_00用于独立验证。每次单独停车执行capture，不要连续运行命令冒充不同场景。记录IMU和可用轮速检查，但程序没有车辆控制权，不能替人停车。
+
+```bash
+~/r3live_ws/scout_calibrate.sh prepare run_01 scene_00 scene_01 scene_02
+~/r3live_ws/scout_calibrate.sh solve run_01
+~/r3live_ws/scout_calibrate.sh project run_01 validation_00
+```
+
+结果在`~/r3live_ws/calibration/runs/run_01/`。查看validation/validation_00/projection.png和edges.png，检查不同距离和图像区域的对应结构。候选矩阵不自动启用。人工认可独立验证后才能执行：
+
+```bash
+~/r3live_ws/scout_calibrate.sh accept run_01 --confirm-validation
+```
+
+停止原定位入口后，显式给R³LIVE传入生成的accepted_calibration.yaml；不传仍沿用安装初值：
+
+```bash
+~/r3live_ws/start_scout_r3live.sh \
+  calibration_file:=/home/nvidia/r3live_ws/calibration/runs/run_01/accepted_calibration.yaml
+```
+
+该过程只估计空间外参，未估计时间偏移，不接入NDT或导航。测试目录calibration_test、calibration_synthetic_20260910*里的数据和矩阵不能用于本车正式标定。详细采集规则、旧bag导出、文件结构和错误处理见[标定操作与开发说明](../optional/r3live/calibration/README.md)。

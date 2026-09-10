@@ -1,0 +1,324 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index cd66f23..39b3551 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -14,6 +14,7 @@ find_package(catkin REQUIRED COMPONENTS
+   pcl_conversions
+   pcl_ros
+   roscpp
++  rosbag
+   rospy
+   sensor_msgs
+   std_msgs
+@@ -40,19 +41,14 @@ include_directories(
+   ${catkin_INCLUDE_DIRS}
+   ${PCL_INCLUDE_DIRS}
+   ${OpenCV_INCLUDE_DIRS}
++  ${CERES_INCLUDE_DIRS}
+ )
+ 
+-add_executable(lidar_camera_calib src/lidar_camera_calib.cpp include/lidar_camera_calib.hpp)
+ add_executable(lidar_camera_multi_calib src/lidar_camera_multi_calib.cpp include/lidar_camera_calib.hpp)
+-add_executable(bag_to_pcd src/bag_to_pcd.cpp)
+-target_link_libraries(lidar_camera_calib 
+-  ${catkin_LIBRARIES} ${OpenCV_LIBS} ${PCL_LIBRARIES} ${CERES_LIBRARIES}
+-)
+ 
+ target_link_libraries(lidar_camera_multi_calib 
+   ${catkin_LIBRARIES} ${OpenCV_LIBS} ${PCL_LIBRARIES} ${CERES_LIBRARIES}
+ )
+ 
+-target_link_libraries(bag_to_pcd 
+-  ${catkin_LIBRARIES}  ${PCL_LIBRARIES}
+-)
+\ No newline at end of file
++# Scout exports driver2 bags with its checked Python tool. Do not build the
++# upstream legacy driver1 bag converter or duplicate single-scene executable.
+diff --git a/include/lidar_camera_calib.hpp b/include/lidar_camera_calib.hpp
+index 59170f2..d28ff51 100644
+--- a/include/lidar_camera_calib.hpp
++++ b/include/lidar_camera_calib.hpp
+@@ -8,6 +8,7 @@
+ #include <fstream>
+ #include <iostream>
+ #include <opencv2/opencv.hpp>
++#include "scout_headless.h"
+ #include <pcl/ModelCoefficients.h>
+ #include <pcl/common/io.h>
+ #include <pcl/features/normal_3d.h>
+@@ -216,6 +217,10 @@ Calibration::Calibration(const std::string &image_file,
+   initVoxel(raw_lidar_cloud_, voxel_size_, voxel_map);
+   LiDAREdgeExtraction(voxel_map, ransac_dis_threshold_, plane_size_threshold_,
+                       plane_line_cloud_);
++  if (rgb_egde_cloud_->size()<20 || plane_line_cloud_->size()<20) {
++    ROS_ERROR("Insufficient image/geometric edges; choose a scene with intersecting planes");
++    exit(2);
++  }
+ };
+ 
+ bool Calibration::loadCameraConfig(const std::string &camera_file) {
+@@ -393,9 +398,9 @@ void Calibration::edgeDetector(
+   }
+   edge_cloud->width = edge_cloud->points.size();
+   edge_cloud->height = 1;
+-  // cv::imshow("canny result", canny_result);
+-  // cv::imshow("edge result", edge_img);
+-  // cv::waitKey();
++  // scout_show("canny result", canny_result);
++  // scout_show("edge result", edge_img);
++  // scout_wait();
+ }
+ 
+ void Calibration::projection(
+@@ -559,7 +564,7 @@ cv::Mat Calibration::getConnectImg(
+   for (size_t i = 0; i < search_cloud->points.size(); i++) {
+     pcl::PointXYZ searchPoint = search_cloud->points[i];
+     if (kdtree->nearestKSearch(searchPoint, K, pointIdxNKNSearch,
+-                               pointNKNSquaredDistance) > 0) {
++                               pointNKNSquaredDistance) == K) {
+       for (int j = 0; j < K; j++) {
+         float distance = sqrt(
+             pow(searchPoint.x - tree_cloud->points[pointIdxNKNSearch[j]].x, 2) +
+@@ -1080,8 +1085,8 @@ void Calibration::buildVPnp(
+   if (show_residual) {
+     cv::Mat residual_img =
+         getConnectImg(dis_threshold, cam_edge_cloud_2d, line_edge_cloud_2d);
+-    cv::imshow("residual", residual_img);
+-    cv::waitKey(100);
++    scout_show("residual", residual_img);
++    scout_wait(100);
+   }
+   pcl::search::KdTree<pcl::PointXYZ>::Ptr kdtree(
+       new pcl::search::KdTree<pcl::PointXYZ>());
+@@ -1116,9 +1121,9 @@ void Calibration::buildVPnp(
+   for (size_t i = 0; i < search_cloud->points.size(); i++) {
+     pcl::PointXYZ searchPoint = search_cloud->points[i];
+     if ((kdtree->nearestKSearch(searchPoint, K, pointIdxNKNSearch,
+-                                pointNKNSquaredDistance) > 0) &&
++                                pointNKNSquaredDistance) == K) &&
+         (kdtree_lidar->nearestKSearch(searchPoint, K, pointIdxNKNSearchLidar,
+-                                      pointNKNSquaredDistanceLidar) > 0)) {
++                                      pointNKNSquaredDistanceLidar) == K)) {
+       bool dis_check = true;
+       for (int j = 0; j < K; j++) {
+         float distance = sqrt(
+@@ -1250,8 +1255,8 @@ void Calibration::buildPnp(
+   if (show_residual) {
+     cv::Mat residual_img =
+         getConnectImg(dis_threshold, cam_edge_cloud_2d, line_edge_cloud_2d);
+-    cv::imshow("residual", residual_img);
+-    cv::waitKey(100);
++    scout_show("residual", residual_img);
++    scout_wait(100);
+   }
+   pcl::search::KdTree<pcl::PointXYZ>::Ptr kdtree(
+       new pcl::search::KdTree<pcl::PointXYZ>());
+@@ -1275,7 +1280,7 @@ void Calibration::buildPnp(
+   for (size_t i = 0; i < search_cloud->points.size(); i++) {
+     pcl::PointXYZ searchPoint = search_cloud->points[i];
+     if (kdtree->nearestKSearch(searchPoint, K, pointIdxNKNSearch,
+-                               pointNKNSquaredDistance) > 0) {
++                               pointNKNSquaredDistance) == K) {
+       for (int j = 0; j < K; j++) {
+         float distance = sqrt(
+             pow(searchPoint.x - tree_cloud->points[pointIdxNKNSearch[j]].x, 2) +
+@@ -1570,4 +1575,4 @@ void Calibration::calcCovarance(const Vector6d &extrinsic_params,
+   covarance = var_camera_pixel + var_lidar_pixel;
+ }
+ 
+-#endif
+\ No newline at end of file
++#endif
+diff --git a/include/scout_headless.h b/include/scout_headless.h
+new file mode 100644
+index 0000000..adbfd39
+--- /dev/null
++++ b/include/scout_headless.h
+@@ -0,0 +1,14 @@
++#pragma once
++#include <opencv2/opencv.hpp>
++#include <cstdlib>
++#include <algorithm>
++#include <string>
++inline bool scout_headless() { return std::getenv("SCOUT_CALIB_HEADLESS") != nullptr; }
++inline void scout_show(std::string name, const cv::Mat &image) {
++  if (!scout_headless()) { cv::imshow(name,image); return; }
++  const char *directory=std::getenv("SCOUT_CALIB_OUTPUT");
++  if (!directory || image.empty()) return;
++  std::replace(name.begin(),name.end(),' ','_');
++  cv::imwrite(std::string(directory)+"/"+name+".png",image);
++}
++inline int scout_wait(int delay=0) { return scout_headless() ? -1 : cv::waitKey(delay); }
+diff --git a/src/lidar_camera_multi_calib.cpp b/src/lidar_camera_multi_calib.cpp
+index c10403b..19a490b 100644
+--- a/src/lidar_camera_multi_calib.cpp
++++ b/src/lidar_camera_multi_calib.cpp
+@@ -26,7 +26,7 @@ string calib_config_file;
+ // instrins matrix
+ Eigen::Matrix3d inner;
+ // Distortion coefficient
+-Eigen::Vector4d distor;
++Eigen::Matrix<double,5,1> distor;
+ Eigen::Vector4d quaternion;
+ Eigen::Vector3d transation;
+ 
+@@ -37,7 +37,7 @@ public:
+   template <typename T>
+   bool operator()(const T *_q, const T *_t, T *residuals) const {
+     Eigen::Matrix<T, 3, 3> innerT = inner.cast<T>();
+-    Eigen::Matrix<T, 4, 1> distorT = distor.cast<T>();
++    Eigen::Matrix<T, 5, 1> distorT = distor.cast<T>();
+     Eigen::Quaternion<T> q_incre{_q[3], _q[0], _q[1], _q[2]};
+     Eigen::Matrix<T, 3, 1> t_incre{_t[0], _t[1], _t[2]};
+     Eigen::Matrix<T, 3, 1> p_l(T(pd.x), T(pd.y), T(pd.z));
+@@ -53,7 +53,7 @@ public:
+     T yo = (vo - cy) / fy;
+     T r2 = xo * xo + yo * yo;
+     T r4 = r2 * r2;
+-    T distortion = 1.0 + distorT[0] * r2 + distorT[1] * r4;
++    T distortion = 1.0 + distorT[0] * r2 + distorT[1] * r4 + distorT[4] * r2 * r4;
+     T xd = xo * distortion + (distorT[2] * xo * yo + distorT[2] * xo * yo) +
+            distorT[3] * (r2 + xo * xo + xo * xo);
+     T yd = yo * distortion + distorT[3] * xo * yo + distorT[3] * xo * yo +
+@@ -80,7 +80,7 @@ public:
+   template <typename T>
+   bool operator()(const T *_q, const T *_t, T *residuals) const {
+     Eigen::Matrix<T, 3, 3> innerT = inner.cast<T>();
+-    Eigen::Matrix<T, 4, 1> distorT = distor.cast<T>();
++    Eigen::Matrix<T, 5, 1> distorT = distor.cast<T>();
+     Eigen::Quaternion<T> q_incre{_q[3], _q[0], _q[1], _q[2]};
+     Eigen::Matrix<T, 3, 1> t_incre{_t[0], _t[1], _t[2]};
+     Eigen::Matrix<T, 3, 1> p_l(T(pd.x), T(pd.y), T(pd.z));
+@@ -96,7 +96,7 @@ public:
+     T yo = (vo - cy) / fy;
+     T r2 = xo * xo + yo * yo;
+     T r4 = r2 * r2;
+-    T distortion = 1.0 + distorT[0] * r2 + distorT[1] * r4;
++    T distortion = 1.0 + distorT[0] * r2 + distorT[1] * r4 + distorT[4] * r2 * r4;
+     T xd = xo * distortion + (distorT[2] * xo * yo + distorT[2] * xo * yo) +
+            distorT[3] * (r2 + xo * xo + xo * xo);
+     T yd = yo * distortion + distorT[3] * xo * yo + distorT[3] * xo * yo +
+@@ -163,14 +163,13 @@ void roughCalib(std::vector<Calibration> &calibs, Vector6d &calib_params,
+         test_params << test_euler[0], test_euler[1], test_euler[2],
+             calib_params[3], calib_params[4], calib_params[5];
+         std::vector<VPnPData> pnp_list;
+-        for (size_t i = 0; i < calibs.size(); i++)
++        float cost = 0;
++        for (size_t i = 0; i < calibs.size(); i++) {
+           calibs[i].buildVPnp(test_params, match_dis, false,
+                               calibs[i].rgb_egde_cloud_,
+                               calibs[i].plane_line_cloud_, pnp_list);
+-        float cost = 0;
+-        for (size_t i = 0; i < calibs.size(); i++)
+-          cost += (calibs[i].plane_line_cloud_->size() - pnp_list.size()) *
+-                  1.0 / calibs[i].plane_line_cloud_->size();
++          cost += 1.0 - double(pnp_list.size()) / double(calibs[i].plane_line_cloud_->size());
++        }
+         std::cout << "n " << n << " round " << round << " iter " << iter
+                   << " cost:" << cost << std::endl;
+         if (cost < min_cost) {
+@@ -183,8 +182,8 @@ void roughCalib(std::vector<Calibration> &calibs, Vector6d &calib_params,
+                               calibs[0].rgb_egde_cloud_,
+                               calibs[0].plane_line_cloud_, pnp_list);
+           cv::Mat projection_img = calibs[0].getProjectionImg(calib_params);
+-          cv::imshow("Rough Optimization", projection_img);
+-          cv::waitKey(50);
++          scout_show("Rough Optimization", projection_img);
++          scout_wait(50);
+         }
+       }
+     }
+@@ -204,6 +203,9 @@ int main(int argc, char **argv) {
+   nh.param<vector<double>>("camera/dist_coeffs", dist_coeffs, vector<double>());
+   nh.param<bool>("calib/use_rough_calib", use_rough_calib, false);
+   nh.param<string>("calib/calib_config_file", calib_config_file, "");
++  if (data_num<1 || camera_matrix.size()!=9 || dist_coeffs.size()!=5 || result_path.empty()) {
++    ROS_ERROR("Invalid data count, camera calibration or result path"); return 2;
++  }
+ 
+   std::vector<Calibration> calibs;
+   for (size_t i = 0; i < data_num; i++) {
+@@ -239,7 +241,7 @@ int main(int argc, char **argv) {
+   Eigen::Vector3d T;
+   inner << calibs[0].fx_, 0.0, calibs[0].cx_, 0.0, calibs[0].fy_, calibs[0].cy_,
+       0.0, 0.0, 1.0;
+-  distor << calibs[0].k1_, calibs[0].k2_, calibs[0].p1_, calibs[0].p2_;
++  distor << calibs[0].k1_, calibs[0].k2_, calibs[0].p1_, calibs[0].p2_, calibs[0].k3_;
+   R = calibs[0].init_rotation_matrix_;
+   T = calibs[0].init_translation_vector_;
+   std::cout << "Initial rotation matrix:" << std::endl
+@@ -255,14 +257,14 @@ int main(int argc, char **argv) {
+   calib_params[4] = T[1];
+   calib_params[5] = T[2];
+   cv::Mat init_img = calibs[0].getProjectionImg(calib_params);
+-  cv::imshow("Initial extrinsic", init_img);
+-  cv::waitKey(1000);
++  scout_show("Initial extrinsic", init_img);
++  scout_wait(1000);
+   if (use_rough_calib) {
+     roughCalib(calibs, calib_params, DEG2RAD(0.2), 40);
+   }
+   cv::Mat test_img = calibs[0].getProjectionImg(calib_params);
+-  cv::imshow("After rough extrinsic", test_img);
+-  cv::waitKey(1000);
++  scout_show("After rough extrinsic", test_img);
++  scout_wait(1000);
+   int iter = 0;
+   // Maximum match distance threshold: 15 pixels
+   // If initial extrinsic lead to error over 15 pixels, the algorithm will not
+@@ -287,9 +289,10 @@ int main(int argc, char **argv) {
+       }
+       std::cout << "Iteration:" << iter++ << " Dis:" << dis_threshold
+                 << " pnp size: " << vpnp_size << std::endl;
++      if (vpnp_size<30) { ROS_ERROR("Too few correspondences; result not saved"); return 3; }
+       cv::Mat projection_img = calibs[0].getProjectionImg(calib_params);
+-      cv::imshow("Optimization", projection_img);
+-      cv::waitKey(100);
++      scout_show("Optimization", projection_img);
++      scout_wait(100);
+       Eigen::Vector3d euler_angle(calib_params[0], calib_params[1],
+                                   calib_params[2]);
+       Eigen::Matrix3d opt_init_R;
+@@ -331,6 +334,7 @@ int main(int argc, char **argv) {
+ 
+       ceres::Solver::Summary summary;
+       ceres::Solve(options, &problem, &summary);
++      if (!summary.IsSolutionUsable()) { ROS_ERROR("Ceres solution unusable; result not saved"); return 4; }
+       std::cout << summary.BriefReport() << std::endl;
+       Eigen::Matrix3d rot = m_q.toRotationMatrix();
+       euler_angle = rot.eulerAngles(2, 1, 0);
+@@ -370,14 +374,17 @@ int main(int argc, char **argv) {
+       Eigen::AngleAxisd(calib_params[1], Eigen::Vector3d::UnitY()) *
+       Eigen::AngleAxisd(calib_params[2], Eigen::Vector3d::UnitX());
+   std::ofstream outfile(result_path);
++  if (!outfile) { ROS_ERROR("Cannot write result"); return 5; }
++  outfile << std::setprecision(17);
+   for (int i = 0; i < 3; i++) {
+     outfile << R(i, 0) << "," << R(i, 1) << "," << R(i, 2) << "," << T[i]
+             << std::endl;
+   }
+   outfile << 0 << "," << 0 << "," << 0 << "," << 1 << std::endl;
++  outfile.close();
+   cv::Mat opt_img = calibs[0].getProjectionImg(calib_params);
+-  cv::imshow("Optimization result", opt_img);
+-  cv::waitKey(1000);
++  scout_show("Optimization result", opt_img);
++  scout_wait(1000);
+   Eigen::Matrix3d init_rotation;
+   init_rotation << 0, -1.0, 0, 0, 0, -1.0, 1, 0, 0;
+   Eigen::Matrix3d adjust_rotation;
+@@ -388,6 +395,7 @@ int main(int argc, char **argv) {
+   // ","
+   //         << RAD2DEG(adjust_euler[2]) << "," << 0 << "," << 0 << "," << 0
+   //         << std::endl;
++  if (scout_headless()) return 0;
+   while (ros::ok()) {
+     sensor_msgs::PointCloud2 pub_cloud;
+     pcl::PointCloud<pcl::PointXYZRGB>::Ptr rgb_cloud(
+@@ -402,4 +410,4 @@ int main(int argc, char **argv) {
+     /* code */
+   }
+   return 0;
+-}
+\ No newline at end of file
++}

@@ -5,6 +5,7 @@ import math
 import os
 from pathlib import Path
 import signal
+import sys
 import subprocess
 import tempfile
 import time
@@ -18,6 +19,8 @@ from nav_msgs.msg import Odometry
 from livox_ros_driver2.msg import CustomMsg
 import tf
 import yaml
+sys.path.insert(0,str(Path(__file__).resolve().parent))
+from calibration_io import load_accepted
 
 
 def transform(description):
@@ -99,6 +102,14 @@ def main():
         # R3LIVE uses T_world_camera = T_world_imu * T_imu_camera.
         imu_camera=np.linalg.inv(base_imu).dot(base_camera).dot(camera_optical)
         config=yaml.safe_load((package/'config/estimator.yaml').read_text())
+        calibration_file=rospy.get_param('~calibration_file','')
+        calibration_record=None
+        if calibration_file:
+            imu_camera,calibration_record=load_accepted(
+                calibration_file,info,config['r3live_lio']['lidar_to_imu_translation'])
+            if calibration_record['lidar_frame']!=lidar.header.frame_id:
+                raise ValueError('LiDAR frame changed since spatial calibration')
+            rospy.loginfo('Using operator-accepted spatial calibration: %s; time offset is not calibrated by this file',calibration_file)
         config['r3live_vio']={'image_width':info.width,'image_height':info.height,
             'camera_intrinsic':list(info.K),'camera_dist_coeffs':list(info.D) or [0.]*5,
             'camera_ext_R':imu_camera[:3,:3].reshape(-1).tolist(),
@@ -108,9 +119,12 @@ def main():
         runtime=directory/'runtime.yaml'
         runtime.write_text(yaml.safe_dump(config,sort_keys=False))
         (directory/'rig_snapshot.yaml').write_text(yaml.safe_dump(rig))
+        if calibration_record is not None:
+            (directory/'calibration_snapshot.yaml').write_text(yaml.safe_dump(calibration_record))
         (directory/'sensor_snapshot.json').write_text(json.dumps({
             'camera_info_frame':info.header.frame_id,'camera_stamp':image.header.stamp.to_sec(),
-            'imu_stamp':imu.header.stamp.to_sec(),'calibration_status':rig['calibration_status'],
+            'imu_stamp':imu.header.stamp.to_sec(),'calibration_status':
+                'operator_accepted_spatial_only' if calibration_record else rig['calibration_status'],
             'meaning':'Startup clock sanity only; not temporal or geometric calibration'},indent=2))
         estimator=launch('estimator',['runtime_config:='+str(runtime)])
         rospy.wait_for_message('/r3live/odometry',Odometry,timeout=45)
