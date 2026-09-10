@@ -17,6 +17,7 @@ def main():
     parser.add_argument('--turn-rate', type=float, default=0.)
     parser.add_argument('--speed', type=float, default=.2)
     parser.add_argument('--lio-scale', type=float, default=1.)
+    parser.add_argument('--duration', type=float, default=10.)
     args = parser.parse_args()
     yaw0 = math.radians(args.yaw_deg)
 
@@ -74,7 +75,7 @@ def main():
                 time.sleep(.1)
             start = time.monotonic()
             step = 0
-            while time.monotonic() - start < 10:
+            while time.monotonic() - start < args.duration:
                 elapsed = time.monotonic() - start
                 stamp = rospy.Time.now()
                 wheel = Odometry()
@@ -101,6 +102,9 @@ def main():
             last = outputs[-1]
             dx, dy, _ = trajectory(elapsed)
             error = math.hypot(last.pose.pose.position.x-10-dx, last.pose.pose.position.y-20-dy)
+            print('RESULT xy=(%.4f, %.4f) expected=(%.4f, %.4f) body_v=(%.4f, %.4f) error=%.4f' %
+                  (last.pose.pose.position.x,last.pose.pose.position.y,10+dx,20+dy,
+                   last.twist.twist.linear.x,last.twist.twist.linear.y,error), flush=True)
             if args.lio_scale == 1. or args.profile == 'wheel_priority':
                 assert error < .30, ('Wrong body/world transformation or excessive LIO pull', error, log_dir)
             assert abs(last.twist.twist.linear.x - args.speed) < .1
