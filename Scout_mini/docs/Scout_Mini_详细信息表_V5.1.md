@@ -415,7 +415,8 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 
 | 项目 | 值 |
 |---|---|
-| 推荐命令 | `rosrun scout_system_bringup scout_fusion_test.py` |
+| 推荐命令 | `rosrun scout_system_bringup scout_fusion_test.py --profile wheel_priority`；省略profile也默认新版 |
+| 原版对照 | `rosrun scout_system_bringup scout_fusion_test.py --profile baseline` |
 | 只检查不启动 | 同命令添加`--check-only`；存在旧节点返回2 |
 | 内部launch | `scout_system_bringup/scout_fusion_test.launch`；不要绕过启动冲突检查 |
 | 新节点 | `/scout_odom_comparison`，只订阅不发布ROS话题或TF |
@@ -423,10 +424,35 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 | 对齐 | 同一header时刻插值，各自共同起点SE(3)归一化，保留前左上 |
 | 输出频率 | 终端1 Hz、CSV约10 Hz，无新增TF |
 | 数据目录 | `~/livox_fastlio/logs/fusion_tests/<时间_随机后缀>/` |
-| 文件 | samples.csv、summary.json、comparison.png；不默认录bag |
+| 文件 | samples.csv、summary.json、comparison.png、configuration.json（实际guard/EKF参数快照）；不默认录bag |
 | 对比指标 | 相对XYZ/yaw、净水平位移、累计水平路程、相对轮速XY/yaw差、最大/RMS参考差 |
 | 图形 | 三路XY、三路相对航向、LIO/融合对轮速位置差；最多最近20000点 |
 | READY | 三路获得共同有效时间点，初始化起点，之后可人工运动 |
 | INVALID | 断流、帧错或明显源重置，停止更新比较，不自动发停车指令 |
 
 测试链TF仍为odom→camera_init→body→base_link及原静态传感器边，没有map→odom发布者。无NDT、map_server、Navigation或地图文件依赖。脚本不控制CAN接口上线，需保留原CAN配置；底盘驱动仍只输出轮速而不发布odom→base_link。
+
+### 轮速优先配置差异（2026-09-10）
+
+| 参数/接口 | baseline | wheel_priority |
+|---|---|---|
+| guard覆盖文件 | 无，guard.yaml | config/guard_wheel_priority.yaml |
+| 运行LIO XYZ方差 m² | 0.01 / 0.01 / 0.04 | 10000 / 10000 / 10000 |
+| LIO RPY方差 rad² | 各0.0025 | 各0.0025 |
+| 初始化XYZ方差 m² | 0.01 / 0.01 / 0.04 | 0.01 / 0.01 / 0.04，持续到收到EKF初始化输出 |
+| 轮速前向方差 (m/s)² | 0.0025 | 0.0004 |
+| 转弯乘数 | min(25,1+(omega/0.30)²) | 相同；只影响轮速vx权重 |
+| 独立fusion.launch参数 | profile:=baseline，默认 | profile:=wheel_priority |
+| 测试launch参数 | fusion_profile:=baseline | fusion_profile:=wheel_priority，默认 |
+| 正式建图/定位入口 | 默认baseline | 本次不切换正式入口 |
+| 诊断新增字段 | profile=baseline | profile=wheel_priority |
+
+没有新增话题、消息类型或TF边；完整输入输出仍见上方旁路融合表。前向是当前base_link的X轴，世界速度由融合姿态旋转，和启动方向、走廊朝向无关。位姿header.frame_id=odom，twist属于child_frame_id=base_link；不能按header把twist当成世界速度。
+
+| 现象 | 检查 | 处理/边界 |
+|---|---|---|
+| 不确定启动的是新版还是原版 | `/scout_fusion_guard/profile`及configuration.json | 按profile区分，不能只看文件名或启动日期 |
+| 前进主要改变odom的Y | 当前yaw、输出child_frame_id | yaw约90°时正常，不应强制改为世界X |
+| 新版仍存在位置误差 | 航向差、打滑、LIO残余位置拉偏、实测端点 | 该配置只增加轮速平移贡献，不修正姿态漂移或保证绝对精度 |
+| LIO断流后无融合数据 | `/scout/fusion/status` | 仍为锁止保护；本版无轮速独立续航功能 |
+| 初始化后位置不是000 | 首个有效LIO位姿与EKF输出 | 保留LIO原点；启动时保持静止，等待READY |

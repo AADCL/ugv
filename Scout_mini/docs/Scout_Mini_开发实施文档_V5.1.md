@@ -548,7 +548,7 @@ history_length: 1.0
 
 保留三维姿态以兼容现有坡道，不把车体速度当成odom世界X速度。EKF根据车体姿态将前向速度映射到世界坐标。不是紧耦合，不回写FAST-LIO内部状态；不引入NDT反馈或同源IMU的重复观测。
 
-### 17.3 时间截取、噪声及故障边界
+### 17.3 时间截取、噪声及故障边界（baseline原配置）
 
 - header时间戳保留，不换成接收时间；重复/乱序、超过0.30秒或未来超过0.05秒的样本拒绝，EKF用1秒历史处理两路异步延迟。
 - LIO位姿方差初值`[0.01,0.01,0.04,0.0025,0.0025,0.0025]`，单位依次为m²和rad²；为调试假设，非标定精度，不把原适配器零协方差解释为完美观测。
@@ -594,3 +594,54 @@ rosrun scout_system_bringup scout_fusion_test.py
 运行后单路断流超过0.50秒、相邻平移超过`0.30+2*dt`米或转角超过`0.20+3*dt`弧度会锁止比较并保留失效原因。明显轮速000重置必须分新会话，不能用于同一条参考轨迹；小于门限的重置无法保证检测。没有独立真值时禁止把RMS参考差标为绝对定位精度。
 
 Ubuntu20.04 SciPy1.3使用from_dcm/as_dcm，脚本同时兼容新版本from_matrix/as_matrix，不要求升级Jetson系统SciPy。图像保存用无界面Agg后端，不依赖桌面环境。脚本只订阅Odometry、写诊断文件，不发布TF/里程计/cmd_vel。
+
+### 18.1 轮速优先试验版本（2026-09-10）
+
+沿用robot_localization EKF，新增可选`wheel_priority`，保留`baseline`。只改变无NDT试验入口的默认配置；不改FAST-LIO内部、NDT、TF发布权、导航输入及参数。
+
+按下表逐文件同步仓库`Scout_mini/src/`中的完整文件到设备`~/livox_fastlio/src/`同名位置，不拼接历史代码片段。
+
+| 文件 | 实现与修改内容 |
+|---|---|
+| `scout_odom_fusion/config/guard_wheel_priority.yaml` | 新增下方完整覆盖配置，基线`guard.yaml`保持原值 |
+| `scout_odom_fusion/launch/fusion.launch` | `profile`默认baseline；只接受baseline/wheel_priority；先加载guard.yaml，再按profile加载覆盖文件；写入guard私有参数profile |
+| `scout_odom_fusion/scripts/fusion_guard.py` | 读取initial_lio_pose_variances，默认等于原pose方差；EKF尚未确认初始化时持续使用原点先验，确认后才切换运行方差；诊断增加profile |
+| `scout_system_bringup/scripts/scout_fusion_test.py` | 增加`--profile {baseline,wheel_priority}`，默认wheel_priority，传递给launch；原冲突检查保留 |
+| `scout_system_bringup/launch/scout_fusion_test.launch` | 新增fusion_profile默认wheel_priority，并传入fusion.launch的profile参数 |
+| `scout_odom_fusion/scripts/compare_odometry.py` | 启动保存guard/EKF实际参数到configuration.json，退出summary.json也包含快照 |
+| `scout_odom_fusion/test/test_guard.py` | 增加启动消息未被EKF接收时保持原点先验、收到输出后切换位置方差的回归测试 |
+| `scout_odom_fusion/test/test_isolated_ekf.py` | 增加profile、yaw-deg、turn-rate、speed、lio-scale、lio-delay、duration、port参数；校验任意朝向/转弯/倒车、LIO少报距离、非零原点、轮速归零、断流及无TF |
+
+覆盖文件完整有效配置：
+
+```yaml
+lio_pose_variances: [10000.0, 10000.0, 10000.0, 0.0025, 0.0025, 0.0025]
+wheel_speed_variance: 0.0004
+initial_lio_pose_variances: [0.01, 0.01, 0.04, 0.0025, 0.0025, 0.0025]
+```
+
+位置方差单位m²、角度rad²、速度(m/s)²。10000 m²是刻意弱化位置的试验权重，不能解释为实测精度；轮速标准差调参值从0.05降为0.02 m/s。转弯降权仍为`min(25,1+(omega/0.30)^2)`，不融合轮速角速度。运行XYZ同等弱化，不能只弱化世界X，否则走廊方向改变就失效。此版不是方向退化检测，也未加入车体横向零速伪观测。
+
+首个ROS发布消息可能早于EKF订阅者连接，因此不能以“已经发布一帧”作为初始化成功；以guard收到接近LIO位姿的EKF输出为准。原点先验只定义初始坐标的不确定性，不证明初始绝对位置正确。初始化后不使用轮速pose，驱动累计位置归零不会拉回融合原点。
+
+速度观测`twist.linear.x`属于`child_frame_id=base_link`的前左上坐标。状态中的车体速度通过当前融合姿态旋转进入odom：`v_odom=R_odom_base*v_base`。水平前向贡献是`[v*cos(yaw),v*sin(yaw),0]`，上坡使用三维旋转。禁止手动把前向速度直接写入世界X或重复旋转输入。
+
+同步后编译与隔离验证（不会启动硬件）：
+
+```bash
+cd ~/livox_fastlio
+source /opt/ros/noetic/setup.bash
+catkin_make -j1 --pkg scout_odom_fusion scout_system_bringup
+source devel/setup.bash
+python3 src/scout_odom_fusion/test/test_guard.py
+python3 src/scout_odom_fusion/test/test_compare.py
+roslaunch --dump-params scout_odom_fusion fusion.launch profile:=wheel_priority
+python3 src/scout_odom_fusion/test/test_isolated_ekf.py --profile baseline
+python3 src/scout_odom_fusion/test/test_isolated_ekf.py --profile wheel_priority --yaw-deg 90 --lio-scale 0.2
+python3 src/scout_odom_fusion/test/test_isolated_ekf.py --profile wheel_priority --yaw-deg 37 --turn-rate 0.1 --lio-scale 0.2
+python3 src/scout_odom_fusion/test/test_isolated_ekf.py --profile wheel_priority --yaw-deg -125 --speed -0.2 --lio-scale 0.2
+```
+
+私有master默认11431，占用则拒绝，可用`--port 11432`指定另一个空闲端口。测试从不向11311发送数据。合成轨迹通过只证明实现和给定条件下的行为；真实长管廊、打滑及航向误差仍需实测。
+
+真车测试使用`rosrun scout_system_bringup scout_fusion_test.py --profile wheel_priority`，静止等待READY后再运动，停车后Ctrl+C保存。原版用`--profile baseline`。比较configuration.json中的实际参数，避免两轮配置混淆。保持原始话题、新输出和诊断；无新增TF。LIO完全失效仍锁止，不能宣称轮速已能独立接管；长期错误位置观测仍可能慢慢拉偏，姿态偏差也会直接旋转前向积分方向。

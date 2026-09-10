@@ -351,6 +351,20 @@ source ~/livox_fastlio/devel/setup.bash
 rosrun scout_system_bringup scout_fusion_test.py
 ```
 
+2026-09-10起，上述无NDT测试入口默认选择`wheel_priority`。原版对照用
+`rosrun scout_system_bringup scout_fusion_test.py --profile baseline`；显式选择新版用
+`rosrun scout_system_bringup scout_fusion_test.py --profile wheel_priority`。
+每次先结束上一轮测试，再启动另一配置。正式建图/定位入口及独立`fusion.launch`仍默认`baseline`，导航参数和输入不变。
+
+新版强化车体前向轮速，弱化FAST-LIO的XYZ位置观测，继续使用其三维姿态。
+前向指当前`base_link`的X轴，绝不是上电时`odom`的X轴：水平情况下，世界速度为
+`vx_odom = v_forward*cos(yaw)`、`vy_odom = v_forward*sin(yaw)`；坡道按完整三维姿态转换。
+所以可以先转向再进入任意方向的走廊，倒车保留负速度。轮速累计位置和航向不参与融合。
+
+测试请包含不同朝向直行、转弯、倒车、静止及回到起点，并记录实测起终点距离。
+新配置不是故障时的轮速独立接管：FAST-LIO断流/明显跳变仍停止融合输出；姿态漂移、打滑及长期弱位置约束仍可能造成误差。
+对轮速更接近只证明权重变化，不能代替实测精度验收。
+
 脚本检查ROS节点冲突；发现旧底盘、FAST-LIO、NDT、导航或融合节点时拒绝启动，不杀旧节点。新测试只启动Livox、FAST-LIO、Scout底盘、TF管理、pose adapter、融合与对比，无NDT、map_server、Navigation，不保存PCD、不自动开车。不要绕过脚本直接启动同名测试launch。
 
 等待终端`[COMPARE] READY`，再保持静止约10秒，然后人工遥控直行、停车、转弯或返回。终端每秒输出wheel/lio/fused三行：`dx/dy`为共同起点车体坐标下相对位移，`yaw`为相对航向，`net`为起终点水平直线距离，`path`为采样累计水平路程。`dXY/wheel`和`dYaw/wheel`是相对轮速的差异，不是真实定位误差；累计路程包含静止噪声，航向显示限制在正负180度。
@@ -362,6 +376,7 @@ rosrun scout_system_bringup scout_fusion_test.py
   samples.csv       同时间戳的三路相对轨迹和差异，约10 Hz
   summary.json      最后结果、最大/RMS差异、拒绝样本数和失效原因
   comparison.png    XY轨迹、相对航向、相对轮速位置差三图
+  configuration.json 启动时实际guard/EKF参数，含profile；summary也包含该快照
 ```
 
 每次自动创建新目录，不覆盖旧结果；CSV持续刷新，正常退出生成汇总和图片。突然断电可能缺少最后数据、汇总和图片。该入口默认不录bag，需要原始记录时另用现有导航日志记录入口（无move_base会提示但可继续录制）；本CSV并非完整原始ROS消息。图片最多显示最近20000个对齐样本，CSV保留完整会话。
