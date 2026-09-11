@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>wheeltec_safety</name>
+  <version>0.1.0</version>
+  <description>Fail-closed velocity gate for the WheelTech mobile base.</description>
+  <maintainer email="114551361+BAIOLED@users.noreply.github.com">BAIOLED</maintainer>
+  <license>BSD-3-Clause</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <depend>actionlib_msgs</depend>
+  <depend>diagnostic_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>map_msgs</depend>
+  <depend>move_base_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>rospy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>tf2_ros</depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <test_depend>python3-nose</test_depend>
+
+  <export />
+</package>

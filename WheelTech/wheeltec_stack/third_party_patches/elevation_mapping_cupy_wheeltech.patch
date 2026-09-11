@@ -1,0 +1,89 @@
+diff --git a/elevation_mapping_cupy/script/elevation_mapping_cupy/elevation_mapping.py b/elevation_mapping_cupy/script/elevation_mapping_cupy/elevation_mapping.py
+index d6ac5c5..0a9d154 100644
+--- a/elevation_mapping_cupy/script/elevation_mapping_cupy/elevation_mapping.py
++++ b/elevation_mapping_cupy/script/elevation_mapping_cupy/elevation_mapping.py
+@@ -97,13 +97,15 @@ class ElevationMap:
+ 
+         self.semantic_map.initialize_fusion()
+ 
+-        weight_file = subprocess.getoutput('echo "' + param.weight_file + '"')
+-        param.load_weights(weight_file)
+-
+-        if param.use_chainer:
+-            self.traversability_filter = get_filter_chainer(param.w1, param.w2, param.w3, param.w_out)
++        if param.enable_traversability_filter:
++            weight_file = subprocess.getoutput('echo "' + param.weight_file + '"')
++            param.load_weights(weight_file)
++            if param.use_chainer:
++                self.traversability_filter = get_filter_chainer(param.w1, param.w2, param.w3, param.w_out)
++            else:
++                self.traversability_filter = get_filter_torch(param.w1, param.w2, param.w3, param.w_out)
+         else:
+-            self.traversability_filter = get_filter_torch(param.w1, param.w2, param.w3, param.w_out)
++            self.traversability_filter = None
+         self.untraversable_polygon = xp.zeros((1, 2))
+ 
+         # Plugins
+@@ -371,21 +373,21 @@ class ElevationMap:
+             self.semantic_map.update_layers_pointcloud(points_all, channels, R, t, self.new_map)
+ 
+             if self.param.enable_overlap_clearance:
+                 self.clear_overlap_map(t)
+-            # dilation before traversability_filter
+-            self.traversability_input *= 0.0
+-            self.dilation_filter_kernel(
+-                self.elevation_map[5],
+-                self.elevation_map[2] + self.elevation_map[6],
+-                self.traversability_input,
+-                self.traversability_mask_dummy,
+-                size=(self.cell_n * self.cell_n),
+-            )
+-            # calculate traversability
+-            traversability = self.traversability_filter(self.traversability_input)
+-            self.elevation_map[3][3:-3, 3:-3] = traversability.reshape(
+-                (traversability.shape[2], traversability.shape[3])
+-            )
++            if self.param.enable_traversability_filter:
++                # Dilation before the optional learned traversability filter.
++                self.traversability_input *= 0.0
++                self.dilation_filter_kernel(
++                    self.elevation_map[5],
++                    self.elevation_map[2] + self.elevation_map[6],
++                    self.traversability_input,
++                    self.traversability_mask_dummy,
++                    size=(self.cell_n * self.cell_n),
++                )
++                traversability = self.traversability_filter(self.traversability_input)
++                self.elevation_map[3][3:-3, 3:-3] = traversability.reshape(
++                    (traversability.shape[2], traversability.shape[3])
++                )
+ 
+         # calculate normal vectors
+         self.update_normal(self.traversability_input)
+diff --git a/elevation_mapping_cupy/script/elevation_mapping_cupy/kernels/custom_kernels.py b/elevation_mapping_cupy/script/elevation_mapping_cupy/kernels/custom_kernels.py
+index d30d029..0b03ae4 100644
+--- a/elevation_mapping_cupy/script/elevation_mapping_cupy/kernels/custom_kernels.py
++++ b/elevation_mapping_cupy/script/elevation_mapping_cupy/kernels/custom_kernels.py
+@@ -68,7 +68,9 @@ def map_utils(
+         __device__ bool is_valid(float16 x, float16 y, float16 z,
+                                float16 sx, float16 sy, float16 sz) {
+             float d = point_sensor_distance(x, y, z, sx, sy, sz);
+-            float dxy = max(sqrt(x * x + y * y) - ${ramped_height_range_b}, 0.0);
++            float dx = x - sx;
++            float dy = y - sy;
++            float dxy = max(sqrt(dx * dx + dy * dy) - ${ramped_height_range_b}, 0.0);
+             if (d < ${min_valid_distance} * ${min_valid_distance}) {
+                 return false;
+             }
+diff --git a/elevation_mapping_cupy/script/elevation_mapping_cupy/parameter.py b/elevation_mapping_cupy/script/elevation_mapping_cupy/parameter.py
+index fdd181c..812c5c3 100644
+--- a/elevation_mapping_cupy/script/elevation_mapping_cupy/parameter.py
++++ b/elevation_mapping_cupy/script/elevation_mapping_cupy/parameter.py
+@@ -204,6 +204,7 @@ class Parameter:
+     enable_drift_compensation: bool = True  # enable drift compensation
+     enable_visibility_cleanup: bool = True  # enable visibility cleanup
+     enable_overlap_clearance: bool = True  # enable overlap clearance
++    enable_traversability_filter: bool = True  # enable learned traversability filter and its ML dependency
+     use_only_above_for_upper_bound: bool = True  # use only above for upper bound
+     use_chainer: bool = True  # use chainer as a backend of traversability filter or pytorch. If false, it uses pytorch. pytorch requires ~2GB more GPU memory compared to chainer but runs faster.
+     position_noise_thresh: float = 0.1  # if the position change is bigger than this value, the drift compensation happens.

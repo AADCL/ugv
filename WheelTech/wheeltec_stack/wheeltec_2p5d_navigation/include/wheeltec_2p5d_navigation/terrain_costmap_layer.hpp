@@ -2,6 +2,8 @@
 
 #include <costmap_2d/layer.h>
 #include <costmap_2d/layered_costmap.h>
+#include <mutex>
+#include <std_srvs/Trigger.h>
 
 #include "wheeltec_2p5d_navigation/terrain_map.hpp"
 
@@ -15,6 +17,10 @@ class TerrainCostmapLayer : public costmap_2d::Layer {
   void updateCosts(costmap_2d::Costmap2D& master_grid, int min_i, int min_j,
                    int max_i, int max_j) override;
  private:
+  bool reloadMap(std_srvs::Trigger::Request&, std_srvs::Trigger::Response&);
+  ros::NodeHandle pnh_;
+  ros::ServiceServer reload_service_;
+  std::mutex map_mutex_;
   TerrainMap terrain_;
   bool loaded_ = false;
   bool unknown_as_lethal_ = false;

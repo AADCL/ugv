@@ -2,16 +2,16 @@
 set -euo pipefail
 
 source /opt/ros/noetic/setup.bash
-source /home/nrc19/livox_fastlio/devel/setup.bash
+source /home/nrc15/livox_fastlio/devel/setup.bash
 export ROS_MASTER_URI=http://localhost:11311
 
 bags=("$@")
 if [ "${#bags[@]}" -eq 0 ]; then
   bags=(
-    /home/nrc19/2026-09-01-13-25-39.bag
-    /home/nrc19/2026-09-01-13-27-32.bag
-    /home/nrc19/2026-09-01-13-33-12.bag
-    /home/nrc19/2026-09-01-13-35-01_first65s.bag
+    /home/nrc15/2026-09-01-13-25-39.bag
+    /home/nrc15/2026-09-01-13-27-32.bag
+    /home/nrc15/2026-09-01-13-33-12.bag
+    /home/nrc15/2026-09-01-13-35-01_first65s.bag
   )
 fi
 names=(terrain_stairs_up terrain_stairs_down terrain_ramp_down terrain_ramp_up)
@@ -26,7 +26,7 @@ for _ in $(seq 1 30); do
   rosparam get /run_id >/dev/null 2>&1 && break
   sleep 0.2
 done
-roslaunch wheeltec_tf_manager tf_manager.launch \
+roslaunch "$(rospack find wheeltec_tf_manager)/launch/include/tf_manager.launch.xml" \
   >/tmp/wheeltec_2p5d_bag_tf.log 2>&1 &
 task_tf_pid=$!
 
@@ -49,18 +49,18 @@ rosparam set /use_sim_time true
 for ((i=0; i<${#bags[@]}; ++i)); do
   bag=${bags[$i]}
   name=${names[$i]}
-  output=/home/nrc19/livox_fastlio/maps/$name
+  output=/home/nrc15/livox_fastlio/maps/$name
   mkdir -p "$output"
 
-  roslaunch wheeltec_cloud_adapter cloud_adapter.launch \
+  roslaunch "$(rospack find wheeltec_cloud_adapter)/launch/include/cloud_adapter.launch.xml" \
     node_name:=wheeltec_bag_terrain_adapter \
     output_topic:=/cloud_registered_terrain target_frame:=terrain_sensor \
     >"/tmp/${name}_adapter.log" 2>&1 &
   task_adapter_pid=$!
-  roslaunch wheeltec_terrain_filter wheeltec_terrain_filter.launch \
+  roslaunch "$(rospack find wheeltec_terrain_filter)/launch/include/wheeltec_terrain_filter.launch.xml" \
     >"/tmp/${name}_filter.log" 2>&1 &
   task_filter_pid=$!
-  roslaunch wheeltec_terrain_filter terrain_map_accumulator.launch \
+  roslaunch "$(rospack find wheeltec_terrain_filter)/launch/include/terrain_map_accumulator.launch.xml" \
     map_name:="$name" >"/tmp/${name}_accumulator.log" 2>&1 &
   task_accumulator_pid=$!
   sleep 2

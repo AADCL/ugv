@@ -10,6 +10,7 @@
 #include <pcl_conversions/pcl_conversions.h>
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
+#include <std_srvs/Trigger.h>
 
 namespace wt = wheeltec_2p5d_navigation;
 
@@ -19,18 +20,39 @@ class TerrainMapServer {
     std::string path;
     pnh_.param<std::string>("terrain_map_yaml", path, "");
     pnh_.param("visualization_max_slope_deg", visualization_max_slope_, 20.0);
-    if (path.empty()) throw std::runtime_error("terrain_map_yaml is required");
-    map_ = wt::loadTerrainMap(path);
     elevation_pub_ = nh_.advertise<sensor_msgs::PointCloud2>(
         "/terrain_2p5d/elevation_cloud", 1, true);
     cost_pub_ = nh_.advertise<nav_msgs::OccupancyGrid>(
         "/terrain_2p5d/traversability_cost", 1, true);
     slope_pub_ = nh_.advertise<nav_msgs::OccupancyGrid>(
         "/terrain_2p5d/slope", 1, true);
-    publish();
+    reload_service_ = pnh_.advertiseService("reload_map", &TerrainMapServer::reloadMap, this);
+    bool live_mapping = false;
+    pnh_.param("live_mapping", live_mapping, false);
+    if (!live_mapping) {
+      if (path.empty()) throw std::runtime_error("terrain_map_yaml is required");
+      map_ = wt::loadTerrainMap(path);
+      publish();
+    }
   }
 
  private:
+  bool reloadMap(std_srvs::Trigger::Request&, std_srvs::Trigger::Response& response) {
+    try {
+      std::string path;
+      pnh_.getParam("terrain_map_yaml", path);
+      auto next = wt::loadTerrainMap(path);
+      map_ = std::move(next);
+      publish();
+      response.success = true;
+      response.message = "loaded " + path;
+    } catch (const std::exception& error) {
+      response.success = false;
+      response.message = error.what();
+    }
+    return true;
+  }
+
   nav_msgs::OccupancyGrid gridBase() const {
     nav_msgs::OccupancyGrid grid;
     grid.header.frame_id = map_.frame_id;
@@ -89,6 +111,7 @@ class TerrainMapServer {
   ros::Publisher elevation_pub_;
   ros::Publisher cost_pub_;
   ros::Publisher slope_pub_;
+  ros::ServiceServer reload_service_;
   double visualization_max_slope_ = 20.0;
 };
 
@@ -103,4 +126,3 @@ int main(int argc, char** argv) {
   }
   return 0;
 }
-

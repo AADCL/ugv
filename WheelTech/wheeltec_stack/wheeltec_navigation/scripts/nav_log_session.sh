@@ -33,12 +33,22 @@ if ! rosnode list 2>/dev/null | grep -qx '/move_base'; then
   echo "[NAV_LOG][WARN] /move_base is not currently visible. The bag will still start, but navigation data may be incomplete."
 fi
 
-# Standard global planning, slope cost, elevation-relative local obstacles and TEB.
+# Standard navigation and exploration share this recorder.
 TOPICS=(
   /tf
   /tf_static
   /rosout_agg
   /cmd_vel
+  /nav_cmd_vel
+  /wheeltec_driver/cmd_vel
+  /wheeltec_safety/status
+  /exploration/state
+  /exploration/map_status
+  /exploration/observed_local_map
+  /exploration/frontier_status
+  /exploration/frontier_available
+  /exploration/frontier_map
+  /explore/selected_goal
   /odom
   /fastlio_odom
   /move_base_simple/goal
@@ -51,6 +61,7 @@ TOPICS=(
 
   /move_base/TebLocalPlannerROS/global_plan
   /move_base/TebLocalPlannerROS/local_plan
+  /move_base/TebLocalPlannerROS/execution_mode
   /move_base/TebLocalPlannerROS/teb_poses
   /move_base/TebLocalPlannerROS/teb_markers
   /move_base/TebLocalPlannerROS/teb_feedback
@@ -73,6 +84,9 @@ TOPICS=(
   /terrain_2p5d/slope
   /cloud_registered_body
   /cloud_registered_terrain
+  /terrain/obstacle_points
+  /terrain/clearing_points
+  /terrain/diagnostics
   /terrain/elevation_obstacle_points
   /terrain/elevation_clearing_points
 )

@@ -62,6 +62,10 @@ def main():
     )
     parser.add_argument("map_name")
     parser.add_argument(
+        "--output-dir", default=None,
+        help="isolated output directory (live mapping uses the same converter)"
+    )
+    parser.add_argument(
         "--source",
         default=None,
         help=(
@@ -101,7 +105,8 @@ def main():
 
     home = os.path.expanduser("~")
     workspace = os.path.join(home, "livox_fastlio")
-    map_dir = os.path.join(workspace, "maps", args.map_name)
+    default_map_dir = os.path.join(workspace, "maps", args.map_name)
+    map_dir = os.path.abspath(args.output_dir or default_map_dir)
     os.makedirs(map_dir, exist_ok=True)
 
     bringup_dir = rospack_find("wheeltec_system_bringup")
@@ -109,7 +114,7 @@ def main():
     mapper_dir = rospack_find("wheeltec_pointcloud_mapper")
 
     source_pcd = args.source or os.path.join(
-        map_dir, "filtered_camera_init.pcd"
+        default_map_dir, "filtered_camera_init.pcd"
     )
 
     geometry_yaml = os.path.join(

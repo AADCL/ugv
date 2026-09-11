@@ -1,0 +1,60 @@
+<launch>
+  <arg name="map_name" default="current_exploration" />
+  <!-- Starting this launch authorizes one exploration session after readiness. -->
+  <arg name="auto_explore" default="true" />
+  <arg name="auto_start" default="true" />
+  <arg name="completion_hold_time" default="30.0" />
+  <arg name="completion_map_updates" default="2" />
+  <arg name="live_terrain_rate" default="10.0" />
+
+  <param name="/wheeltec_exploration/goal_producer_mode"
+         value="$(eval 'explore_lite' if arg('auto_explore') else 'none')" />
+
+  <!-- Composition only: original mapping and original navigation entries. -->
+  <include file="$(find wheeltec_system_bringup)/launch/wheeltec_mapping.launch">
+    <arg name="map_name" value="$(arg map_name)" />
+    <arg name="start_chassis" value="false" />
+    <arg name="map_autosave_period" value="0.0" />
+  </include>
+
+  <node pkg="tf2_ros" type="static_transform_publisher"
+        name="wheeltec_mapping_map_frame" args="0 0 0 0 0 0 map odom" />
+  <node pkg="wheeltec_exploration" type="observed_map_memory.py"
+        name="wheeltec_observed_map_memory" output="screen" required="true" />
+
+  <node pkg="wheeltec_exploration_driver" type="exploration_chassis_node"
+        name="wheeltec_robot" output="screen" required="true">
+    <param name="usart_port_name" value="/dev/wheeltec_controller" />
+    <param name="serial_baud_rate" value="115200" />
+    <param name="odom_frame_id" value="wheel_odom" />
+    <param name="robot_frame_id" value="base_footprint" />
+    <param name="gyro_frame_id" value="gyro_link" />
+    <param name="cmd_vel_timeout" value="0.20" />
+    <param name="max_linear_x" value="0.20" />
+    <param name="max_linear_y" value="0.0" />
+    <param name="max_angular_z" value="0.40" />
+  </node>
+
+  <include file="$(find wheeltec_navigation)/launch/navigation_teb.launch">
+    <arg name="map_name" value="$(arg map_name)" />
+    <arg name="live_mapping" value="true" />
+    <arg name="use_observation_memory" value="true" />
+    <arg name="live_terrain_rate" value="$(arg live_terrain_rate)" />
+    <arg name="cmd_vel_topic" value="/nav_cmd_vel" />
+    <arg name="planner_overrides"
+         value="$(find wheeltec_exploration)/config/exploration_overrides.yaml" />
+  </include>
+
+  <include file="$(find wheeltec_safety)/launch/include/cmd_vel_safety.launch.xml">
+    <arg name="allow_stationary_command_wait" value="true" />
+  </include>
+
+  <!-- Required supervisor exits on completion/stop, shutting down this session. -->
+  <include if="$(arg auto_explore)"
+           file="$(find wheeltec_exploration)/launch/include/frontier.launch.xml">
+    <arg name="auto_start" value="$(arg auto_start)" />
+    <arg name="map_name" value="$(arg map_name)" />
+    <arg name="completion_hold_time" value="$(arg completion_hold_time)" />
+    <arg name="completion_map_updates" value="$(arg completion_map_updates)" />
+  </include>
+</launch>

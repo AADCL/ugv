@@ -4,6 +4,8 @@
 
 <h1 align="center">AADCL UGV · BATF-Nav V5.1</h1>
 
+> **WheelTech 轻量探索试验分支**：`experiment/wheeltech-light-exploration-v5.1`。本分支保存 `.123` 当前探索实现、入口整理及三大文档；在线使用实时局部感知和轻量观测记忆，结束保存 PCD 后人工生成正式地图。编译与真实录包回放已通过，完整实车探索仍待验收。参见 [试验说明](WheelTech/docs/轻量探索试验分支说明_V5.1.md)。Scout 内容沿用分支基线。
+
 <p align="center">Scout Mini · WheelTech · ROS1 自主建图、定位与导航</p>
 
 <p align="center">

@@ -1,0 +1,26 @@
+<launch>
+  <arg name="auto_start" />
+  <arg name="map_name" />
+  <arg name="completion_hold_time" />
+  <arg name="completion_map_updates" />
+  <param name="/wheeltec_exploration/goal_producer_mode" value="explore_lite" />
+  <node pkg="wheeltec_exploration" type="frontier_costmap_adapter.py"
+        name="wheeltec_frontier_costmap_adapter" output="screen" required="true">
+    <param name="input_topic" value="/move_base/global_costmap/costmap" />
+    <param name="updates_topic" value="/move_base/global_costmap/costmap_updates" />
+    <param name="output_topic" value="/exploration/frontier_map" />
+    <param name="lethal_threshold" value="99" />
+    <param name="min_frontier_cells" value="5" />
+    <param name="completion_hold_time" value="$(arg completion_hold_time)" />
+  </node>
+  <rosparam command="load" ns="explore" file="$(find wheeltec_exploration)/config/frontier.yaml" />
+  <node pkg="wheeltec_exploration" type="explore_supervisor.py"
+        name="wheeltec_explore_supervisor" output="screen" required="true">
+    <param name="auto_start" value="$(arg auto_start)" />
+    <param name="map_status_topic" value="/exploration/map_status" />
+    <param name="map_timeout" value="2.0" />
+    <param name="map_name" value="$(arg map_name)" />
+    <param name="completion_hold_time" value="$(arg completion_hold_time)" />
+    <param name="completion_map_updates" value="$(arg completion_map_updates)" />
+  </node>
+</launch>

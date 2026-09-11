@@ -5,7 +5,7 @@ add_compile_options(-std=c++14 -O2 -Wall -Wextra)
 
 find_package(catkin REQUIRED COMPONENTS
   base_local_planner costmap_2d geometry_msgs nav_core nav_msgs
-  pcl_conversions pcl_ros pluginlib roscpp sensor_msgs tf2
+  pcl_conversions pcl_ros pluginlib roscpp sensor_msgs std_srvs tf2
   tf2_geometry_msgs visualization_msgs)
 find_package(PCL REQUIRED COMPONENTS common io)
 find_package(yaml-cpp REQUIRED)

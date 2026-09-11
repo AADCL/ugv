@@ -103,7 +103,7 @@ def main():
         out_dir = os.path.dirname(bags[0])
     os.makedirs(out_dir, exist_ok=True)
 
-    cmd = []
+    commands = {"/cmd_vel": [], "/wheeltec_driver/cmd_vel": []}
     odom = []
     local_plan = []
     teb_poses = []
@@ -116,6 +116,7 @@ def main():
 
     topics = [
         "/cmd_vel",
+        "/wheeltec_driver/cmd_vel",
         "/odom",
         TEB_LOCAL,
         TEB_POSES,
@@ -146,8 +147,8 @@ def main():
                 t_max = ts if t_max is None else max(t_max, ts)
                 topic_counts[topic] = topic_counts.get(topic, 0) + 1
 
-                if topic == "/cmd_vel":
-                    cmd.append((ts, float(msg.linear.x), float(msg.angular.z)))
+                if topic in commands:
+                    commands[topic].append((ts, float(msg.linear.x), float(msg.angular.z)))
                 elif topic == "/odom":
                     odom.append((ts, float(msg.twist.twist.linear.x), float(msg.twist.twist.angular.z)))
                 elif topic == TEB_LOCAL:
@@ -173,6 +174,8 @@ def main():
                     if any(pattern.lower() in lower for pattern in fail_patterns):
                         planner_fail_logs.append((ts, text))
 
+    command_topic = "/wheeltec_driver/cmd_vel" if commands["/wheeltec_driver/cmd_vel"] else "/cmd_vel"
+    cmd = commands[command_topic]
     cmd.sort()
     odom.sort()
     local_plan.sort()
@@ -267,6 +270,7 @@ def main():
         rel = 0.0 if t_min is None else ts - t_min
         lines.append("  goal +{:.3f}s x={:.3f} y={:.3f} yaw_rad={:.3f} id={}".format(rel, x, y, yaw, goal_id))
 
+    lines.append("command_topic: {}".format(command_topic))
     lines.append("cmd_vel_samples: {}".format(len(cmd)))
     lines.append("cmd_vel_rate_hz_overall: {:.3f}".format(len(cmd) / duration if duration > 0 else 0.0))
     lines.append("odom_samples: {}".format(len(odom)))

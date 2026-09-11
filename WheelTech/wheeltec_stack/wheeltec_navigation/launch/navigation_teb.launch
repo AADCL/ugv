@@ -5,6 +5,11 @@
   <arg name="terrain_map_yaml" default="$(arg map_dir)/terrain_2p5d.yaml" />
   <arg name="odom_topic" default="/odom" />
   <arg name="cmd_vel_topic" default="/cmd_vel" />
+  <!-- The same planners can consume maps refreshed during mapping. -->
+  <arg name="live_mapping" default="false" />
+  <arg name="use_observation_memory" default="false" />
+  <arg name="planner_overrides" default="" />
+  <arg name="live_terrain_rate" default="10.0" />
 
   <!--
     Navigation-only layer. Start wheeltec_localization.launch first with the
@@ -13,7 +18,12 @@
   -->
 
   <!-- Transform the live cloud into the terrain sensor frame. -->
-  <include file="$(find wheeltec_cloud_adapter)/launch/cloud_adapter.launch">
+  <node if="$(arg live_mapping)" pkg="topic_tools" type="throttle"
+        name="wheeltec_navigation_cloud_throttle"
+        args="messages /cloud_registered_body $(arg live_terrain_rate) /navigation/cloud_registered_body"
+        output="screen" />
+  <include file="$(find wheeltec_cloud_adapter)/launch/include/cloud_adapter.launch.xml">
+    <arg name="input_topic" value="$(eval '/navigation/cloud_registered_body' if arg('live_mapping') else '/cloud_registered_body')" />
     <arg name="node_name" value="wheeltec_terrain_cloud_adapter" />
     <arg name="output_topic" value="/cloud_registered_terrain" />
     <arg name="target_frame" value="terrain_sensor" />
@@ -22,7 +32,7 @@
   <!-- Local collision sensing must not depend on localization or the saved
        elevation map. Patchwork++ estimates the current ground directly in the
        sensor frame and the guard publishes live obstacle/clearing clouds. -->
-  <include file="$(find wheeltec_terrain_filter)/launch/wheeltec_terrain_filter.launch">
+  <include file="$(find wheeltec_terrain_filter)/launch/include/wheeltec_terrain_filter.launch.xml">
     <arg name="input_cloud" value="/cloud_registered_terrain" />
     <arg name="enable_guard" value="true" />
     <arg name="patchwork_node_name" value="wheeltec_navigation_patchworkpp" />
@@ -30,16 +40,18 @@
   </include>
 
   <!-- PGM remains available for RViz and 2D compatibility. -->
-  <node pkg="map_server" type="map_server" name="wheeltec_navigation_map_server"
-        args="$(arg nav_map_yaml)" output="screen">
+  <node unless="$(arg use_observation_memory)" pkg="map_server" type="map_server" name="wheeltec_navigation_map_server"
+        args="$(eval find('wheeltec_navigation') + '/config/unknown_map.yaml' if arg('live_mapping') else arg('nav_map_yaml'))" output="screen">
     <remap from="map" to="/nav_static_map" />
     <remap from="map_metadata" to="/nav_static_map_metadata" />
+    <remap from="change_map" to="$(eval '/wheeltec_navigation_map_server/change_map' if arg('live_mapping') else '/change_map')" />
   </node>
 
   <!-- Elevation/slope topics remain available for RViz and diagnostics. -->
-  <node pkg="wheeltec_2p5d_navigation" type="terrain_map_server_node"
+  <node unless="$(arg use_observation_memory)" pkg="wheeltec_2p5d_navigation" type="terrain_map_server_node"
         name="wheeltec_terrain_map_server" output="screen">
     <param name="terrain_map_yaml" value="$(arg terrain_map_yaml)" />
+    <param name="live_mapping" value="$(arg live_mapping)" />
   </node>
 
   <node pkg="move_base" type="move_base" name="move_base" output="screen">
@@ -57,6 +69,12 @@
 
     <param name="global_costmap/terrain_slope_layer/terrain_map_yaml"
            value="$(arg terrain_map_yaml)" />
+    <param name="global_costmap/terrain_slope_layer/live_mapping"
+           value="$(arg live_mapping)" />
+    <!-- Only mode-specific limits are overlaid; all base configuration above
+         comes from this normal navigation entry. -->
+    <rosparam if="$(eval arg('planner_overrides') != '')" command="load"
+              file="$(arg planner_overrides)" />
     <remap from="odom" to="$(arg odom_topic)" />
     <remap from="cmd_vel" to="$(arg cmd_vel_topic)" />
   </node>

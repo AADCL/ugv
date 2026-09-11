@@ -12,19 +12,19 @@
 	<include file="$(find livox_ros_driver2)/launch_ROS1/msg_MID360.launch" />
 
 	<!-- 2. FAST-LIO local odometry -->
-	<include file="$(find wheeltec_system_bringup)/launch/fastlio_local_odom.launch" />
+	<include file="$(find wheeltec_system_bringup)/launch/include/fastlio_local_odom.launch.xml" />
 
 	<!-- 3. 固定 TF：内部加载 wheeltec_geometry.yaml -->
-	<include file="$(find wheeltec_tf_manager)/launch/tf_manager.launch" />
+	<include file="$(find wheeltec_tf_manager)/launch/include/tf_manager.launch.xml" />
 
 	<!-- 4. odom -> base_link Odometry -->
-	<include file="$(find wheeltec_pose_adapter)/launch/pose_adapter.launch" />
+	<include file="$(find wheeltec_pose_adapter)/launch/include/pose_adapter.launch.xml" />
 
 	<!-- 5. body 点云 -> base_link 点云 -->
-	<include file="$(find wheeltec_cloud_adapter)/launch/cloud_adapter.launch" />
+	<include file="$(find wheeltec_cloud_adapter)/launch/include/cloud_adapter.launch.xml" />
 
 	<!-- 6. PCD 全局重定位 -->
-	<include file="$(find wheeltec_system_bringup)/launch/wheeltec_relocalization.launch">
+	<include file="$(find wheeltec_system_bringup)/launch/include/wheeltec_relocalization.launch.xml">
 		<arg name="map_pcd" value="$(arg map_pcd)" />
 	</include>
 

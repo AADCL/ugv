@@ -97,9 +97,13 @@ class PointcloudMapper {
     publish_timer_ = nh_.createTimer(
         ros::Duration(map_publish_period_),
         &PointcloudMapper::publishMapTimer, this);
-    autosave_timer_ = nh_.createTimer(
-        ros::Duration(autosave_period_),
-        &PointcloudMapper::autosaveTimer, this);
+    // Exploration accumulates in memory and saves on service/shutdown only.
+    // The ordinary mapping launch retains its 30-second autosave default.
+    if (autosave_period_ > 0.0) {
+      autosave_timer_ = nh_.createTimer(
+          ros::Duration(autosave_period_),
+          &PointcloudMapper::autosaveTimer, this);
+    }
 
     ROS_INFO_STREAM("wheeltec_pointcloud_mapper: " << input_cloud_ << " + "
                     << input_odom_ << " -> " << output_path_
@@ -212,7 +216,7 @@ class PointcloudMapper {
     ray_endpoint_margin_ = std::max(temporal_voxel_size_,
                                     ray_endpoint_margin_);
     map_publish_period_ = std::max(0.1, map_publish_period_);
-    autosave_period_ = std::max(1.0, autosave_period_);
+    if (autosave_period_ > 0.0) autosave_period_ = std::max(1.0, autosave_period_);
     trajectory_min_distance_ = std::max(0.01, trajectory_min_distance_);
 
     if (hit_log_odds_ <= 0.0 || miss_log_odds_ >= 0.0) {

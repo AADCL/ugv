@@ -1,0 +1,28 @@
+<launch>
+  <!-- Internal gate; starts locked and is never automatically armed. -->
+  <arg name="obstacle_topic" default="/terrain/obstacle_points" />
+  <arg name="raw_cloud_topic" default="/cloud_registered_terrain" />
+  <arg name="costmap_topic" default="/move_base/local_costmap/costmap" />
+  <arg name="costmap_updates_topic" default="/move_base/local_costmap/costmap_updates" />
+  <arg name="local_plan_topic" default="/move_base/TebLocalPlannerROS/local_plan" />
+  <arg name="move_base_status_topic" default="/move_base/status" />
+  <arg name="move_base_cancel_topic" default="/move_base/cancel" />
+  <arg name="base_frame" default="base_link" />
+  <arg name="allow_stationary_command_wait" default="false" />
+
+  <node pkg="wheeltec_safety" type="cmd_vel_safety_gate.py"
+        name="wheeltec_safety" output="screen" required="true">
+    <rosparam command="load"
+              file="$(find wheeltec_safety)/config/cmd_vel_safety.yaml" />
+    <param name="obstacle_topic" value="$(arg obstacle_topic)" />
+    <param name="raw_cloud_topic" value="$(arg raw_cloud_topic)" />
+    <param name="costmap_topic" value="$(arg costmap_topic)" />
+    <param name="costmap_updates_topic" value="$(arg costmap_updates_topic)" />
+    <param name="local_plan_topic" value="$(arg local_plan_topic)" />
+    <param name="move_base_status_topic" value="$(arg move_base_status_topic)" />
+    <param name="move_base_cancel_topic" value="$(arg move_base_cancel_topic)" />
+    <param name="base_frame" value="$(arg base_frame)" />
+    <param name="allow_stationary_command_wait"
+           value="$(arg allow_stationary_command_wait)" />
+  </node>
+</launch>

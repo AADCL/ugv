@@ -1,0 +1,12 @@
+<library path="lib/libwheeltec_exploration_plugins">
+  <class name="wheeltec_exploration/ObservedObstacleLayer"
+         type="wheeltec_exploration::ObservedObstacleLayer"
+         base_class_type="costmap_2d::Layer">
+    <description>Original local obstacle layer with uninflated observation export for exploration memory.</description>
+  </class>
+  <class name="wheeltec_exploration/TebLocalPlannerROS"
+         type="wheeltec_exploration::ForwardTebPlanner"
+         base_class_type="nav_core::BaseLocalPlanner">
+    <description>Exploration path alignment and forward execution using the original TEB optimizer.</description>
+  </class>
+</library>

@@ -1,0 +1,48 @@
+# A small mode overlay on navigation_teb.launch; no duplicate planner stack.
+recovery_behavior_enabled: false
+base_local_planner: wheeltec_exploration/TebLocalPlannerROS
+GlobalPlanner:
+  # Goals now lie on the observed side, with space for the entire chassis.
+  allow_unknown: false
+  use_dijkstra: false
+  use_quadratic: false
+  use_grid_path: true
+  default_tolerance: 0.0
+TebLocalPlannerROS:
+  max_vel_x: 0.20
+  max_vel_theta: 0.40
+  max_vel_x_backwards: 0.01
+  # TEB's soft velocity bound still requires a positive value. The exploration
+  # plugin aligns first and rejects reverse trajectories before issuing commands.
+  penalty_epsilon: 0.005
+  weight_kinematics_forward_drive: 10000.0
+  allow_init_with_backwards_motion: false
+global_costmap:
+  publish_frequency: 2.0
+  always_send_full_costmap: true
+  track_unknown_space: true
+  plugins:
+    - {name: static_layer, type: "costmap_2d::StaticLayer"}
+    - {name: inflation_layer, type: "costmap_2d::InflationLayer"}
+  static_layer:
+    first_map_only: false
+  inflation_layer:
+    inflation_radius: 0.10
+    cost_scaling_factor: 5.0
+local_costmap:
+  always_send_full_costmap: true
+  track_unknown_space: true
+  plugins:
+    - {name: obstacle_layer, type: "wheeltec_exploration/ObservedObstacleLayer"}
+    - {name: inflation_layer, type: "costmap_2d::InflationLayer"}
+  obstacle_layer:
+    track_unknown_space: true
+    observation_map_topic: /exploration/observed_local_map
+    live_marking:
+      observation_persistence: 2.0
+      expected_update_rate: 0.50
+    live_clearing:
+      expected_update_rate: 0.50
+  inflation_layer:
+    inflation_radius: 0.10
+    cost_scaling_factor: 5.0

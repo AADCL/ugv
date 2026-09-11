@@ -1,0 +1,71 @@
+# Velocity wiring is compiled into the gate and cannot be overridden:
+# /move_base -> /nav_cmd_vel -> /wheeltec_driver/cmd_vel.
+obstacle_topic: /terrain/obstacle_points
+raw_cloud_topic: /cloud_registered_terrain
+costmap_topic: /move_base/local_costmap/costmap
+costmap_updates_topic: /move_base/local_costmap/costmap_updates
+diagnostics_topic: /wheeltec_safety/status
+local_plan_topic: /move_base/TebLocalPlannerROS/local_plan
+move_base_status_topic: /move_base/status
+move_base_cancel_topic: /move_base/cancel
+base_frame: base_link
+
+# The gate always starts locked. It can only be armed through its ~arm service.
+output_rate: 20.0
+command_timeout: 0.20
+cloud_timeout: 0.60
+raw_cloud_timeout: 0.60
+raw_cloud_min_points: 10
+near_field_crop_radius: 1.00
+costmap_timeout: 0.75
+tf_timeout: 0.50
+tf_lookup_timeout: 0.03
+require_local_plan: true
+local_plan_timeout: 0.35
+# A new goal must produce both a post-goal command and a fresh nonempty local
+# plan within this fixed upper bound. Repeated zero commands do not reset it.
+# planner_patience(5) + controller_patience(5) + status propagation margin(2).
+# The chassis remains stopped until the current goal has a fresh plan/command.
+goal_handshake_timeout: 12.0
+move_base_status_timeout: 1.0
+locked_cancel_period: 1.0
+
+# Measured WheelTech body envelope, base_link at the geometric center.
+footprint_front: 0.25
+footprint_rear: 0.25
+footprint_half_width: 0.20
+footprint_margin: 0.02
+
+# The directional stop region includes reaction and braking distance. These
+# values are independent of the planner inflation radius used for doorways.
+min_forward_clearance: 0.18
+min_reverse_clearance: 0.18
+reaction_time: 0.20
+linear_deceleration: 0.20
+angular_deceleration: 0.40
+max_prediction_horizon: 1.50
+prediction_samples: 12
+
+# Rear coverage is incomplete with the current single Mid-360 installation.
+allow_reverse: false
+# Deadband is only a numerical stop threshold, not a workaround for reverse
+# trajectories. The exploration planner rejects unsupported reverse arcs.
+linear_deadband: 0.0001
+angular_deadband: 0.01
+max_linear_speed: 0.20
+max_angular_speed: 0.40
+
+# OccupancyGrid 100 is a measured lethal cell; 99 is the inflated/inscribed
+# area. The gate already sweeps the full footprint plus margin, so applying
+# that footprint to 99 would count robot clearance a second time.
+costmap_lethal_threshold: 100
+treat_costmap_unknown_as_unsafe: true
+
+# Independent veto before ground/non-ground classification. Only the cropped
+# near field is retained. A 20 degree planar ramp changes by about 18 mm over
+# one 50 mm XY cell, while an upright chair leg has a much larger local Z span.
+raw_xy_cell_size: 0.05
+raw_cell_min_points: 2
+raw_min_vertical_span: 0.08
+raw_vertical_min_z: -0.40
+raw_vertical_max_z: 1.50

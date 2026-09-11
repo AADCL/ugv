@@ -1,6 +1,8 @@
 <launch>
 
   <arg name="map_name" default="current_mapping" />
+  <arg name="start_chassis" default="true" />
+  <arg name="map_autosave_period" default="30.0" />
   <!-- Legacy Patchwork++ accumulation is diagnostic only. The default offline
        terrain builder now works directly from the Bayesian static PCD. -->
   <arg name="enable_online_terrain_diagnostics" default="false" />
@@ -14,28 +16,29 @@
   <include file="$(find livox_ros_driver2)/launch_ROS1/msg_MID360.launch" />
 
   <!-- 2. FAST-LIO odometry and registered cloud (native PCD saving disabled) -->
-  <include file="$(find wheeltec_system_bringup)/launch/fastlio_mapping_wheeltec.launch">
+  <include file="$(find wheeltec_system_bringup)/launch/include/fastlio_mapping_wheeltec.launch.xml">
     <arg name="rviz" value="false" />
   </include>
 
   <!-- 3. Filter registered scans and build the deliverable static PCD -->
-  <include file="$(find wheeltec_pointcloud_mapper)/launch/pointcloud_mapper.launch">
+  <include file="$(find wheeltec_pointcloud_mapper)/launch/include/pointcloud_mapper.launch.xml">
     <arg name="map_name" value="$(arg map_name)" />
+    <arg name="autosave_period" value="$(arg map_autosave_period)" />
   </include>
 
   <!-- 4. TF -->
-  <include file="$(find wheeltec_tf_manager)/launch/tf_manager.launch" />
+  <include file="$(find wheeltec_tf_manager)/launch/include/tf_manager.launch.xml" />
 
   <!-- 5. odom -> base_link 发布为 /fastlio_odom -->
-  <include file="$(find wheeltec_pose_adapter)/launch/pose_adapter.launch" />
+  <include file="$(find wheeltec_pose_adapter)/launch/include/pose_adapter.launch.xml" />
 
   <!-- 6. WheelTech serial chassis. Wheel odometry stays on /odom and publishes no TF. -->
-  <include file="$(find turn_on_wheeltec_robot)/launch/include/base_serial.launch">
+  <include file="$(find turn_on_wheeltec_robot)/launch/include/base_serial.launch" if="$(arg start_chassis)">
     <arg name="odom_frame_id" value="wheel_odom" />
   </include>
 
   <!-- 7. Optional online Patchwork++ diagnostics / legacy classified PCDs. -->
-  <include file="$(find wheeltec_cloud_adapter)/launch/cloud_adapter.launch"
+  <include file="$(find wheeltec_cloud_adapter)/launch/include/cloud_adapter.launch.xml"
            if="$(arg enable_online_terrain_diagnostics)">
     <arg name="node_name" value="wheeltec_terrain_cloud_adapter" />
     <arg name="input_topic" value="$(arg terrain_input_topic)" />
@@ -43,14 +46,14 @@
     <arg name="target_frame" value="terrain_sensor" />
   </include>
 
-  <include file="$(find wheeltec_terrain_filter)/launch/wheeltec_terrain_filter.launch"
+  <include file="$(find wheeltec_terrain_filter)/launch/include/wheeltec_terrain_filter.launch.xml"
            if="$(arg enable_online_terrain_diagnostics)">
     <!-- The accumulator consumes Patchwork++ directly. The terrain guard is a
          diagnostic branch and is disabled in deliverable maps. -->
     <arg name="enable_guard" value="false" />
   </include>
 
-  <include file="$(find wheeltec_terrain_filter)/launch/terrain_map_accumulator.launch"
+  <include file="$(find wheeltec_terrain_filter)/launch/include/terrain_map_accumulator.launch.xml"
            if="$(arg enable_online_terrain_diagnostics)">
     <arg name="map_name" value="$(arg map_name)" />
   </include>

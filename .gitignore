@@ -12,6 +12,8 @@ __pycache__/
 *.bag.active
 *.pcd
 *.pgm
+# Synthetic 3x3 all-unknown startup asset; this is not a recorded map.
+!WheelTech/wheeltec_stack/wheeltec_navigation/config/unknown_map.pgm
 *.bt
 *.f32
 *.u8
