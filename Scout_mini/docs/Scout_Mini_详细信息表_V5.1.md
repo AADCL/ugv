@@ -472,19 +472,19 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 | LIO断流后无融合数据 | `/scout/fusion/status` | 仍为锁止保护；本版无轮速独立续航功能 |
 | 初始化后位置不是000 | 首个有效LIO位姿与EKF输出 | 保留LIO原点；启动时保持静止，等待READY |
 
-## R³LIVE独立试验：入口、节点、话题、TF与排错（2026-09-10）
+## R³LIVE：入口、工程接口、节点、TF与排错（2026-09-11）
 
-以下仅在独立 `~/r3live_ws` 试验中有效；不是原导航链路的替换表。实现为官方R³LIVE＋Scout适配，非R³LIVE++。所有源文件位于`Scout_mini/optional/r3live/`。
+以下对应独立 `~/r3live_ws` 入口。默认开启工程接口适配，和FAST-LIO二选一运行；未自动接管全局导航。实现为官方R³LIVE＋Scout适配，非R³LIVE++。所有源文件位于`Scout_mini/optional/r3live/`。
 
 | 入口/launch | 参数 | 实际功能 |
 |---|---|---|
 | `~/r3live_ws/start_scout_r3live.sh` | 透传所有launch参数 | 设置含新版cv_bridge和相机插件的环境，调用下行入口 |
-| `~/r3live_ws/start_scout_r3live_test.sh` | 默认已选六场景外参、record_bag=true、test_duration=600、试用sessions目录 | 充电后直接实车测试的入口；自动检查和录包，旧试用start.sh也转到此入口 |
+| `~/r3live_ws/start_scout_r3live_test.sh` | 已选六场景外参、record_bag=true、test_duration=600、project_interface=true | 自动检查和录包；读取config/accepted_20260911，输出logs/indoor_tests；原配置backup同保留配置目录 |
 | `~/r3live_ws/view_scout_r3live.sh` | 可选.rviz路径；默认包内config/Scout_R3LIVE.rviz | 只启动系统环境RViz；120桌面配置和快捷入口已部署。默认订阅当前扫描、两路path/odom和track_image，可选RGB_map_0～4；不发送初始位姿/导航目标 |
-| `~/r3live_ws/start_scout_r3live_test.sh` | 透传launch参数；自动指定trial_calibration.yaml | 已选六场景loose候选的室内试用；原配置备份在config/accepted_20260911/backup/，试用授权不是精度验收 |
-| `scout_r3live_bringup/scout_r3live.launch` | check_only=false、start_lidar=true、start_camera=true、calibration_file空、rig_file、output_root=~/r3live_ws/logs、record_bag=false、test_duration=600 | session拥有传感器、检查、估计器和可选录包；实车使用墙钟，不允许use_sim_time |
+| `scout_r3live_bringup/scout_r3live.launch` | project_interface=true、check_only=false、start_lidar=true、start_camera=true、calibration_file空、rig_file、output_root=~/r3live_ws/logs、record_bag=false、test_duration=600 | session拥有传感器、检查、估计器、工程适配及可选录包；实车使用墙钟，不允许use_sim_time |
 | `scout_r3live_bringup/sensors.launch` | `start_lidar`、`start_camera` | 引用现有Mid-360驱动和r3live_ws内重编的RealSense彩色流；通常不要单独调用 |
-| `scout_r3live_bringup/estimator.launch` | 必填`runtime_config` | 前端＋R³LIVE，不启动任何驱动；隔离回放使用 |
+| `scout_r3live_bringup/estimator.launch` | 必填runtime_config；project_interface默认false，session按用户入口传true | 前端＋R³LIVE；开启适配时隔离原始TF并包含下行launch；不启动驱动 |
+| `scout_r3live_bringup/project_interface.launch` | 必填新格式runtime_config（包含scout_project_interface矩阵） | 适配节点＋原TF manager；自身不启动估计器/传感器。单独使用时须将原估计器/tf remap至/r3live/tf_raw |
 | 上游`r3live`示例launch | 不作为Scout入口 | 其Avia、示例相机标定及旧话题不适用于本车 |
 
 关闭两个start开关时只使用已存在的传感器输入，不创建空传感器launch；这用于隔离回放/受控测试，不绕过已有定位节点的冲突检查。
@@ -498,6 +498,9 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 | `/r3live_camera/realsense2_camera` | realsense2_camera/RealSenseNodeFactory nodelet | 彩色流、CameraInfo、内部TF |
 | `/r3live_lidar_front_end` | r3live/r3live_LiDAR_front_end | driver2自定义点云转含逐点时间的PointCloud2 |
 | `/r3live_mapping` | r3live/r3live_mapping | LIO/VIO估计、地图和位姿发布；required，退出触发试验结束 |
+| `/scout_r3live_project_interface` | scout_r3live_bringup/project_interface_node | 精确同步扫描/位姿、首帧对齐、公共话题及TF；required，数据失效时退出，不自动换原点 |
+| `/scout_geometry_tf_publisher` | scout_tf_manager/geometry_tf_publisher.py | 复用scout_geometry.yaml的odom→camera_init；不得另开第二份 |
+| `/scout_tf_manager` | scout_tf_manager/tf_manager.py | 复用extrinsics.yaml的body→base_link、base_link→terrain_sensor |
 
 下表P为发布者，S为订阅者；“工具”指按需启动的RViz/rostopic/记录程序，频率不是硬性保证。
 
@@ -508,11 +511,11 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 | `/r3live_camera/color/image_raw` | sensor_msgs/Image | 相机 → mapping、session | `r3live_camera_color_optical_frame`，640×480、目标15Hz |
 | `/r3live_camera/color/camera_info` | sensor_msgs/CameraInfo | 相机 → session | 同一彩色流的K/D和尺寸 |
 | `/r3live_camera/color/image_raw/compressed` | sensor_msgs/CompressedImage | 相机进程内compressed_image_transport → mapping | 上游同时订阅raw及compressed，首个到达的格式决定处理分支；无需额外节点，但会触发压缩插件执行，必须统一OpenCV |
-| `/r3live/laser_cloud_flat` | sensor_msgs/PointCloud2 | 前端 → mapping | 上游前端标签`livox`；xyz、intensity、curvature(ms)，内部算法输入，无对应新TF广播 |
+| `/r3live/laser_cloud_flat` | sensor_msgs/PointCloud2 | 前端 → mapping | 标签livox，适配模式下为livox_frame的同原点别名；xyz、intensity、curvature(ms) |
 | `/r3live/laser_cloud`、`/r3live/laser_cloud_sharp` | sensor_msgs/PointCloud2 | 前端 → 工具 | 上游保留的广告话题；type4不发布全点/边缘支路，不能以其无频率判故障 |
-| `/r3live/odometry` | nav_msgs/Odometry | mapping → session、工具 | `r3live_world`/`r3live_imu`，激光末点时刻；pose有效，twist/协方差不能当成已验证观测 |
+| `/r3live/odometry` | nav_msgs/Odometry | mapping → 适配节点、session、工具 | `r3live_world`/`r3live_imu`，激光末点时刻；pose有效，twist/协方差不能当成已验证观测 |
 | `/r3live/path` | nav_msgs/Path | mapping → 工具 | `r3live_world`，累计局部轨迹 |
-| `/r3live/cloud_registered` | sensor_msgs/PointCloud2 | mapping → 工具 | `r3live_world`，当前配准点云，不是已清除动态物体的导航地图 |
+| `/r3live/cloud_registered` | sensor_msgs/PointCloud2 | mapping → 适配节点、工具 | `r3live_world`，当前配准点云，不是已清除动态物体的导航地图 |
 | `/r3live/cloud_effected` | sensor_msgs/PointCloud2 | mapping → 工具 | 有效约束点诊断，是否持续输出取决于上游分支 |
 | `/r3live/laser_map` | sensor_msgs/PointCloud2 | mapping → 工具 | 特征地图；默认`publish_feature_map=false`，允许无数据 |
 | `/r3live/camera_odometry` | nav_msgs/Odometry | mapping → session、工具 | `r3live_world`/`r3live_camera_optical`，源图像时刻；与D435i物理光学帧的名称区分 |
@@ -520,22 +523,54 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 | `/r3live/track_image`、`/r3live/raw_image` | sensor_msgs/Image | mapping → 工具 | 跟踪可视化和原图诊断；依上游订阅/发布条件输出 |
 | `/r3live/track_points`、`/r3live/render_points` | sensor_msgs/PointCloud2 | mapping → 工具 | 上游广告但默认未调用发布函数；允许无数据。视觉跟踪数和更新返回状态看estimator.log中的`R3LIVE visual` |
 | `/r3live/RGB_map_<N>` | sensor_msgs/PointCloud2 | mapping → 工具 | `r3live_world`，动态创建的分块彩色地图，非固定数量 |
-| `/tf` | tf2_msgs/TFMessage | mapping → TF工具 | 只新增`r3live_world→r3live_imu` |
-| `/tf_static`、相机内部`/tf`（驱动配置决定） | tf2_msgs/TFMessage | RealSense → session/TF工具 | 相机内部link/光学变换，不连接旧导航树 |
+| `/Odometry` | nav_msgs/Odometry | 适配节点 → scout_pointcloud_mapper（另启） | camera_init/body，源激光末点时间，完整三维位姿 |
+| `/fastlio_odom` | nav_msgs/Odometry | 适配节点 → mapper轨迹/NDT（另启）、session、工具 | odom/base_link；旧工程兼容名称，当前数据来自R³LIVE，pose-only |
+| `/cloud_registered` | sensor_msgs/PointCloud2 | 适配节点 → Bayesian mapper（另启）、RViz | camera_init，输入点数及intensity等字段保持 |
+| `/cloud_registered_body` | sensor_msgs/PointCloud2 | 适配节点 → 地形cloud adapter（另启）、工具 | body，按同帧IMU位姿逆变换，非LiDAR光心坐标 |
+| `/cloud_registered_base` | sensor_msgs/PointCloud2 | 适配节点 → NDT/局部感知（另启） | base_link，含完整旋转和杆臂转换 |
+| `/r3live/tf_raw` | tf2_msgs/TFMessage | mapping → 录包/诊断工具 | 原r3live_world→r3live_imu，仅隔离保留，不能再转发到/tf |
+| `/tf` | tf2_msgs/TFMessage | 适配节点、RealSense内部TF（按驱动配置） → TF消费者 | 适配节点唯一发布camera_init→body；相机只负责自身内部边 |
+| `/tf_static` | tf2_msgs/TFMessage | 原TF manager、适配节点、RealSense → TF消费者 | 具体唯一发布者见下方所有权表 |
 | `/rosout`、`/rosout_agg` | rosgraph_msgs/Log | ROS节点/rosout → 工具 | 通用日志 |
 
 image_transport和RealSense可能额外广告压缩、参数更新或metadata诊断话题，实际依驱动插件版本和订阅者而定；它们不是本试验新增的算法输入。用`rostopic list -v`检查现场运行实例。
 
-TF所有权和独立原点：
+工程适配开启时的TF树（关闭时仍为原独立r3live_world/相机树）：
 
 ```text
-r3live_world ──[r3live_mapping，动态]──> r3live_imu
-
-r3live_camera_link ──[RealSense内部TF]──> r3live_camera_color_frame
-                                        └──> r3live_camera_color_optical_frame
+odom
+└── camera_init
+    ├── r3live_world                 # 固定首帧对齐，不是全局map
+    └── body                        # 唯一动态运动边
+        ├── base_link
+        │   └── terrain_sensor
+        ├── r3live_imu               # body同原点别名
+        ├── livox_frame
+        │   └── livox               # 前端内部LiDAR帧别名
+        ├── r3live_camera_optical    # 原始相机Odometry的child标签
+        └── r3live_camera_link
+            └── RealSense内部color/optical等帧
 ```
 
-`r3live_camera_optical`是相机Odometry的child标签，当前不另外广播该边；`base_link`到相机/IMU的近似安装关系仅用于计算外参，不新增TF。原`map→odom→camera_init→body→base_link`树不改。RViz使用`r3live_world`查看估计输出；不要给`livox`或相机内部孤立树随意补一条零变换来消除报错。
+| TF边 | 唯一发布者 | 来源 |
+|---|---|---|
+| odom→camera_init | scout_geometry_tf_publisher，静态 | scout_system_bringup/config/scout_geometry.yaml原值 |
+| camera_init→body | scout_r3live_project_interface，动态 | 同帧R³LIVE位姿及固定首帧转换；FAST-LIO模式由FAST-LIO发布，二者互斥 |
+| body→base_link；base_link→terrain_sensor | scout_tf_manager，静态 | scout_tf_manager/config/extrinsics.yaml原值 |
+| camera_init→r3live_world | 适配节点，静态 | 首个有效同步样本，仅初始化一次 |
+| body→r3live_imu | 适配节点，静态单位变换 | 工程body沿用IMU原点约定 |
+| body→livox_frame | 适配节点，静态 | r3live_lio/lidar_to_imu_translation |
+| livox_frame→livox | 适配节点，静态单位变换 | 上游前端的同源帧标签 |
+| body→r3live_camera_optical | 适配节点，静态 | 本次实际选中的T_imu_camera，不用相机动态Odometry再广播第二条边 |
+| body→r3live_camera_link | 适配节点，静态 | T_imu_camera_optical × inverse(T_camera_link_optical) |
+| r3live_camera_link以下内部帧 | RealSense | 出厂TF，适配节点不重复发布 |
+| map→odom | 本入口无发布者 | 后续只由原NDT负责，禁止补单位变换伪造全局定位 |
+
+R³LIVE原始动态TF保留在`/r3live/tf_raw`，主TF中的r3live_imu经body连接，不能同时把原动态边接回主树。首帧车体在odom下为零位姿；既有车体安装参数沿用近似几何，并未因本次接口适配获得精确标定。原始相机位姿和LIO可能存在估计差异，静态光学TF不代表二者在任意时刻完全一致。
+
+公共位姿/点云按相同lidar_end_time精确配对（队列各10），不使用最新TF、不插值、不修改stamp。位姿先发布，再发布三个有订阅者的点云；点云只做刚体转换，点数、字段、排列与padding保留。`/Odometry`和`/fastlio_odom`的pose/twist协方差对角为1e6作为未知占位，twist为未计算值；禁止作为速度或标定噪声输入EKF。TEB仍用原`/scout/odom`，本入口不启动轮速融合。
+
+适配节点初始同步最长等待60秒，初始化后配对断流超过2秒退出；错误帧、零/倒退/重复时间、非法四元数或点云格式直接失效，required关系结束估计器。不会沿用旧位姿伪造连续输出。重启会重新定义局部原点，须整套退出后重启。
 
 | 参数组 | 当前值 | 含义 |
 |---|---|---|
@@ -558,7 +593,10 @@ r3live_camera_link ──[RealSense内部TF]──> r3live_camera_color_frame
 | 4.时钟粗检失败 | 原始图像/IMU stamp，系统和传感器时间 | 先修时间同步；不篡改消息stamp强行通过 |
 | 5.前端无点云 | `/livox/lidar`类型、point_num、tag/line、blind | 必须是driver2 CustomMsg，非PointCloud2；检查实际扫描点数 |
 | 6.有LIO无相机位姿 | 图像频率、外参方向、视野内雷达点、纹理、estimator.log | 输出阶段60秒未连续通过5秒检查则结束试验；有图像并不意味着视觉成功更新 |
-| 7.RViz报世界帧错误 | Fixed Frame及实际消息header | 用r3live_world；不要把独立局部原点当作odom/map |
+| 7.RViz报世界帧错误 | project_interface、READY及实际header | 默认适配模式用odom，等首帧同步；关闭适配时用r3live_world；没有NDT时不能用map |
+| 7a.公共点云/里程计无数据 | /r3live/cloud_registered和/r3live/odometry的stamp、frame；estimator.log | 两者必须为同一激光末点时间；2秒无配对退出，不通过改stamp或最新TF绕过 |
+| 7b.TF重复父节点或跳变 | /tf和/r3live/tf_raw、原FAST-LIO/TF adapter是否仍在运行 | 原R³LIVE动态TF只留在隔离话题；退出重复整套入口，不加第二份TF manager |
+| 7c./fastlio_odom速度为零 | 该话题的数据契约 | 适配仅提供位姿，twist未计算；TEB仍读/scout/odom，不把零twist当静止证据 |
 | 8.图像卡顿或CPU过高 | 两路定位是否并开、实际帧率和图像队列 | 保持单入口运行；本版并未证明Jetson所有场景实时性 |
 | 9.能运行但轨迹漂 | 外参/时间标定、视觉跟踪、激光退化和实测基准 | 当前输出正常测试不能代替精度验收；不修改导航参数掩盖问题 |
 | 10.WARMUP迟迟不READY | 原图/IMU/Lidar并行接收年龄、source时间单调性，health/session_result | 传感器60秒内须连续健康5秒；不改写stamp强行通过 |
@@ -585,7 +623,7 @@ session内部额外读取原图、IMU、原始雷达、LIO和相机位姿，持�
 | solve | run名、--port默认11441、--timeout默认1800秒 | 私有ROS master，headless多场景C++求解器；日志和候选矩阵；不会启动或停止真实传感器 |
 | project | run名、场景名 | 固定候选矩阵生成projection.png/edges.png/report.yaml；无优化 |
 | accept | run名、--confirm-validation | 必须有独立投影并人工检查；写accepted_calibration.yaml，默认不启用 |
-| R³LIVE新参数 | calibration_file:=绝对路径，默认空 | 非空时读取接受文件并核验相机K/D/分辨率/帧和雷达帧、内部雷达IMU平移；不增加TF |
+| R³LIVE新参数 | calibration_file:=绝对路径，默认空 | 核验相机K/D/尺寸/帧和内部平移；project_interface开启时同一矩阵用于相机安装TF |
 
 | 采集话题 | 类型 | 读取者/用途 |
 |---|---|---|

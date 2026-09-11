@@ -1,5 +1,6 @@
 <launch>
   <arg name="start_lidar" default="true" />
+  <arg name="project_interface" default="true" />
   <arg name="start_camera" default="true" />
   <arg name="check_only" default="false" />
   <arg name="record_bag" default="false" />
@@ -9,6 +10,7 @@
   <arg name="output_root" default="$(env HOME)/r3live_ws/logs" />
   <node pkg="scout_r3live_bringup" type="session.py" name="scout_r3live_session" output="screen" required="true">
     <param name="start_lidar" value="$(arg start_lidar)" />
+    <param name="project_interface" value="$(arg project_interface)" />
     <param name="start_camera" value="$(arg start_camera)" />
     <param name="check_only" value="$(arg check_only)" />
     <param name="record_bag" value="$(arg record_bag)" />

@@ -703,13 +703,16 @@ python3 src/scout_odom_fusion/test/test_isolated_ekf.py --profile wheel_priority
 | `scout-realsense-opencv.patch` | 在相机CMakeLists显式查找OpenCV，将其include和library加入目标；随overlay的cv_bridge统一版本，不修改旧realsense_ws |
 | `check_opencv_runtime.py` | 用ldd检查相机、cv_bridge、三种图像插件及mapping；缺库或不是单一OpenCV4.5时失败 |
 | `calibration/prepare_indoor_trial.py` | 核对用户选定六场景loose矩阵、备份默认配置及哈希、新建独立试用外参和start.sh；拒绝重复目录，试用授权不表示精度验收 |
-| `scout_r3live_bringup/package.xml`、`CMakeLists.txt` | 自有ROS包依赖、Python可执行脚本、launch/config安装 |
+| `scout_r3live_bringup/package.xml`、`CMakeLists.txt` | 自有ROS包依赖、Python脚本和launch/config安装；新增C++14目标project_interface_node，依赖roscpp、message_filters、tf2_ros、Eigen及标准消息，无PCL/OpenCV依赖 |
+| `scout_r3live_bringup/src/project_interface.cpp` | 精确同步原始扫描和LIO位姿，固定首帧对齐，转换公共位姿/三种点云，发布工程动态TF和标定静态TF，数据失效退出 |
+| `launch/project_interface.launch` | 加载本次runtime及两份既有几何配置，包含原TF manager；required适配节点，不重复启动pose/cloud adapter |
+| `test_project_interface.py` | 独占私有master端口11329，用非零原点、任意初始化旋转、Y向运动/90°转弯验证位姿/点云/TF；检查时间匹配、字段/padding及非法四元数退出，不启动硬件 |
 | `config/rig.yaml` | `T_base_imu`、`T_base_camera_link`，xyz单位m、RPY单位度，明确标记为近似安装尺寸 |
 | `config/estimator.yaml` | Mid-360前端、LIO、VIO公共参数；实际相机K/D和外参由启动器生成 |
-| `launch/scout_r3live.launch` | 用户入口、check_only和传感器开关、日志目录参数 |
+| `launch/scout_r3live.launch` | 用户入口、check_only和传感器开关、日志目录参数；project_interface默认true |
 | `launch/sensors.launch` | Mid-360驱动与D435i彩色640×480@15Hz；关闭深度、红外、相机IMU、相机点云 |
-| `launch/estimator.launch` | 加载完整运行配置，启动前端和估计器，隔离输出话题 |
-| `scripts/session.py` | 冲突检查（含相机manager）、实时时钟要求、并发订阅五路流、分阶段连续预热、生成外参快照、可选录bag、READY与运行故障锁定、按顺序退出自己的估计器/录包/传感器并保存结果 |
+| `launch/estimator.launch` | 加载运行配置，启动前端和估计器；project_interface=true时原mapping的/tf转到/r3live/tf_raw，并包含工程适配launch；直接调用默认false兼容旧回放 |
+| `scripts/session.py` | 冲突检查（含公共接口发布者和TF节点）、五路流预热，生成真实camera optical/link外参矩阵；传递适配开关；READY前检查/fastlio_odom与对应TF；录包加入公共位姿及/tf、/r3live/tf_raw；保留原故障退出流程 |
 | `scripts/runtime_health.py` | 不依赖ROS的流状态检查；observe/problems/arm/check/snapshot接口；每路最多256个接收年龄，检查时间/帧/位姿，READY后首个故障锁定到退出 |
 | `test_runtime_health.py` | 8项测试覆盖预热不足、未来相机时间及启动前恢复、READY后故障锁定、单流断流、重复时间/帧变化、系统时钟跳变、非法位姿和有界内存 |
 | `test_frontend.py` | 私有master下验证360°、非法点过滤、时间和畸形消息拒绝 |
@@ -789,13 +792,64 @@ Mid-360内部雷达→IMU平移为`[-0.011,-0.02329,0.04412]m`，沿用当前FAS
 
 ### 5. 分层验证与限制
 
+#### 工程接口的实现与增量部署（2026-09-11）
+
+约定`T_A_B`把B中的点变换到A。`G=T_odom_camera_init`读取现有`scout_system_bringup/config/scout_geometry.yaml`；`B=T_base_link_body`读取`scout_tf_manager/config/extrinsics.yaml`中publish_inverse=true的那项。工程body继续沿用IMU原点约定，车体安装尺寸仍是原近似几何，本次不改实测参数。R³LIVE的`P(t)=T_r3live_world_r3live_imu(t)`来自`/r3live/odometry`。
+
+首个有效同步样本t0建立固定`A=inverse(G) × B × inverse(P(t0))`，只计算一次，不在运动时跟随重置。
+
+```text
+T_camera_init_body(t) = A × P(t)                       -> /Odometry及动态TF
+T_odom_base_link(t)   = G × A × P(t) × inverse(B)     -> /fastlio_odom
+p_camera_init        = A × p_r3live_world             -> /cloud_registered
+p_body               = inverse(P(t)) × p_r3live_world -> /cloud_registered_body
+p_base_link          = B × inverse(P(t)) × p_world    -> /cloud_registered_base
+```
+
+所以`t0`车体在odom下为单位位姿；初始化时应在水平地面停车。算法启动原点/朝向不能简单改header；例如yaw=90°后前进应体现在odom的Y轴，不应强制归到世界X。
+
+相机矩阵仍由`load_accepted()`或原rig初值生成，session在runtime.yaml额外写入以下行优先4×4数组，适配节点不重新猜外参：
+
+```text
+scout_project_interface/imu_to_camera_optical = T_imu_camera_optical
+scout_project_interface/imu_to_camera_link = T_imu_camera_optical × inverse(T_camera_link_optical)
+```
+
+`T_camera_link_optical`从本次真实驱动TF获取。配套适配launch加载这份runtime，复用原TF manager发布固定工程几何。估计器原`r3live_world→r3live_imu`动态边只进入`/r3live/tf_raw`；适配节点独占`camera_init→body`，通过固定别名连接原始诊断帧。完整父子表见详细信息表，不能另外启动旧pose/cloud adapter。
+
+公共点云按源激光末点时间与位姿精确同步，队列10；只转换XYZ，保留intensity/其他字段、点数、组织结构、行padding及源stamp，按需转换有订阅者的输出。没有新增滤波、降采样或地图积累。公共Odometry的twist未计算，pose/twist协方差对角1e6仅表示未知占位；NDT使用位姿，TEB速度继续读取/scout/odom，不能把此输出当成高精度EKF速度观测。
+
+增量部署必须复制上表完整文件，再编译自有包；不必重新编译上游R³LIVE或改变导航参数。120现有部署已执行以下等价步骤：
+
+```bash
+cd ~/github_upload/ugv
+cp -a Scout_mini/optional/r3live/scout_r3live_bringup/. ~/r3live_ws/src/scout_r3live_bringup/
+source /opt/ros/noetic/setup.bash
+source ~/livox_fastlio/devel/setup.bash
+source ~/r3live_ws/devel/setup.bash
+cd ~/r3live_ws
+catkin_make -j1 --pkg scout_r3live_bringup -DCMAKE_BUILD_TYPE=Release -DR3LIVE_BUILD_MESHING=OFF
+python3 -m py_compile src/scout_r3live_bringup/scripts/session.py
+python3 ~/github_upload/ugv/Scout_mini/optional/r3live/test_project_interface.py
+# 只有要开始实车测试时才执行；默认含适配，不需额外rosrun：
+~/r3live_ws/start_scout_r3live_test.sh
+# READY后另一个终端检查
+rostopic echo -n 1 /fastlio_odom/header
+rosrun tf tf_echo odom base_link
+rostopic hz /cloud_registered_base
+```
+
+测试在私有master上只启动适配和静态TF节点：ARM64编译、旋转/平移初始化、沿Y运动、90°转弯、三种点云坐标、完整字段和padding、时间不匹配不输出、非法位姿退出、TF父节点唯一及两种launch模式的/tf隔离均通过。详情见`TEST_REPORT_PROJECT_INTERFACE_20260911.md`；没有真实bag重放或开车精度测试。适配节点初始化等待上限60秒，初始化后2秒无同步样本则required退出；不发布陈旧位姿。接口转换不检测或修复算法连续漂移。
+
+桌面`Scout_R3LIVE.rviz`更新为odom、公共扫描及base_link位姿，同时保留原始LIO/相机轨迹；旧桌面配置备份于设备maintenance。回到纯独立观察模式用`project_interface:=false`，同时把RViz Fixed Frame切回r3live_world。NDT、Bayesian mapper、底盘和导航没有因本次适配自动启动；原scout_localization.launch仍属于FAST-LIO，不能与新入口叠加。
+
 真实启动按使用文档的一条命令完成。已有FAST-LIO运行时，check_only必须报告冲突且不能关闭原节点。隔离回放使用另外的ROS master，只播放白名单`/livox/lidar`、`/livox/imu`，不要回放底盘指令或旧TF。
 
 前端合成测试需要在私有master加载`Lidar_front_end/lidar_type=4`、`point_step=1`、`N_SCANS=4`、`blind=0.5`，启动前端并把`/laser_cloud_flat`重映射为`/r3live/laser_cloud_flat`，然后运行`python3 test_frontend.py`。它检查120个后向点保留、近点/NaN/非法tag和line剔除、11.9ms末点时间以及非法point_num拒绝。
 
 相机测试通过`sensors.launch start_lidar:=false`和`test_camera_config.py`读取真实工厂内参，生成`/tmp/scout_r3live_test_runtime.yaml`。关闭相机测试后，设置私有master的`use_sim_time=true`，启动`estimator.launch runtime_config:=/tmp/scout_r3live_test_runtime.yaml`及`test_observe.py`，再播放bag。后台rosbag play应重定向stdin为`/dev/null`，避免被终端读输入挂起。测试结束只退出这个master的进程。
 
-必须区分：编译成功、输出正常、视觉参与更新、定位精度达标是四个不同验收层级。无同步图像的旧走廊bag只能测试LIO；短时彩色图像测试也不能代替长走廊、暗光、扬尘和真实外参标定验收。当前不发布`map→odom`，不替换导航输入，不提供轮速接管，不将R³LIVE输出直接送入现有地图finalize流程。
+必须区分：编译成功、输出正常、视觉参与更新、定位精度达标是四个不同验收层级。无同步图像的旧走廊bag只能测试LIO；短时彩色图像测试也不能代替长走廊、暗光、扬尘和真实外参标定验收。适配已提供工程公共话题，但不启动导航或发布map→odom，不提供轮速接管。地图仍需经过Bayesian mapper保存有效包后才能finalize，不能直接把R³LIVE彩色累计图当成最终地图。
 
 2026-09-10端侧验证：ARM64串行编译、OpenCV单版本运行时链接、Mid-360转换合成测试、真实D435i内参/图像/内部TF、已有FAST-LIO冲突拒绝、空闲私有master预检查均通过。旧走廊bag输出422帧有效LIO里程计；最终独立入口联合回放收到178帧里程计、264帧相机位姿和264帧跟踪图像，路径帧和时间检查通过。日志中视觉跟踪点约105～130，几何和光度更新返回成功。这些是短时功能测试，不是精度、运动、掉线降级或长期内存验收。R³LIVE累积地图可能持续增长，长时运行需另测资源占用。
 

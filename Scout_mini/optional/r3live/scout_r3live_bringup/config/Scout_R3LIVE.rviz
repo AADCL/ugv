@@ -17,7 +17,7 @@ Visualization Manager:
   Global Options:
     Background Color: 25; 28; 34
     Default Light: true
-    Fixed Frame: r3live_world
+    Fixed Frame: odom
     Frame Rate: 20
   Displays:
     - Class: rviz/Grid
@@ -33,15 +33,15 @@ Visualization Manager:
         Value: Lines
         Line Width: 0.02
     - Class: rviz/Axes
-      Name: Local world origin
+      Name: Scout odom origin
       Enabled: true
-      Reference Frame: r3live_world
+      Reference Frame: odom
       Length: 1
       Radius: 0.025
     - Class: rviz/PointCloud2
       Name: Current registered scan - no accumulation
       Enabled: true
-      Topic: /r3live/cloud_registered
+      Topic: /cloud_registered
       Queue Size: 2
       Position Transformer: XYZ
       Color Transformer: FlatColor
@@ -72,6 +72,20 @@ Visualization Manager:
       Line Style: Billboards
       Line Width: 0.025
       Pose Style: None
+    - Class: rviz/Odometry
+      Name: Scout base pose - compatibility interface
+      Enabled: true
+      Topic: /fastlio_odom
+      Keep: 1
+      Position Tolerance: 0
+      Angle Tolerance: 0
+      Covariance:
+        Value: false
+      Shape:
+        Value: Axes
+        Axes Length: 0.8
+        Axes Radius: 0.03
+        Alpha: 1
     - Class: rviz/Odometry
       Name: LIO pose - IMU origin
       Enabled: true

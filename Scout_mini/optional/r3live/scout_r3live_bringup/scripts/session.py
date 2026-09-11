@@ -13,6 +13,7 @@ import time
 
 import numpy as np
 import rosnode
+import rosgraph
 import rospkg
 import rospy
 from sensor_msgs.msg import CameraInfo, Image, Imu
@@ -48,14 +49,25 @@ def main():
         if rospy.get_param('/use_sim_time',False):
             raise RuntimeError('Live session requires wall time; use estimator.launch for isolated bag replay')
         nodes=rosnode.get_node_names()
+        project_interface=rospy.get_param('~project_interface',True)
         forbidden={'laserMapping','scout_shadow_ekf','scout_fusion_guard','move_base',
                    'scout_global_localizer','r3live_mapping','r3live_lidar_front_end'}
+        if project_interface:
+            forbidden.update({'scout_r3live_project_interface','scout_tf_manager',
+                              'scout_geometry_tf_publisher','scout_pose_adapter',
+                              'scout_cloud_adapter','scout_pointcloud_mapper'})
         conflicts=[n for n in nodes if n.rsplit('/',1)[-1] in forbidden]
         if rospy.get_param('~start_lidar',True):
             conflicts += [n for n in nodes if 'livox_lidar_publisher' in n]
         if rospy.get_param('~start_camera',True):
             conflicts += [n for n in nodes if n.endswith('/realsense2_camera') or
                           n.endswith('/camera') or n.endswith('/realsense2_camera_manager')]
+        if project_interface:
+            publishers,_,_=rosgraph.Master(rospy.get_name()).getSystemState()
+            owned={'/Odometry','/fastlio_odom','/cloud_registered',
+                   '/cloud_registered_body','/cloud_registered_base'}
+            conflicts += [topic+' owned by '+','.join(owners)
+                          for topic,owners in publishers if topic in owned and owners]
         if conflicts:
             raise RuntimeError('Stop the owning test/launch first; existing nodes: '+', '.join(sorted(set(conflicts))))
         package=Path(rospkg.RosPack().get_path('scout_r3live_bringup'))
@@ -83,7 +95,8 @@ def main():
         minimum_free=3*1024**3+int((test_duration+240)*24*1024**2) if record_bag else 512*1024**2
         if shutil.disk_usage(directory).free < minimum_free:
             raise RuntimeError('Insufficient free disk space for bounded test recording')
-        rospy.logwarn('R3LIVE evaluation only; calibration=%s. Not connected to navigation. Logs: %s',rig['calibration_status'],directory)
+        rospy.logwarn('R3LIVE evaluation; project_interface=%s; NDT/navigation are not started. Logs: %s',
+                      project_interface,directory)
 
         def spawn(name,command):
             handle=(directory/(name+'.log')).open('w')
@@ -139,7 +152,8 @@ def main():
                 '--min-space=2G','-O',str(directory/'sensors'),
                 '/livox/lidar','/livox/imu','/r3live_camera/color/image_raw',
                 '/r3live_camera/color/camera_info','/r3live_camera/color/metadata','/tf_static',
-                '/r3live/odometry','/r3live/camera_odometry','/rosout'])
+                '/r3live/odometry','/r3live/camera_odometry','/rosout'] +
+                (['/tf','/r3live/tf_raw','/Odometry','/fastlio_odom'] if project_interface else []))
         wait_stable(SENSORS,60)
         listener=tf.TransformListener()
         rospy.loginfo('Waiting for camera calibration and image (up to 45 seconds); keep stationary.')
@@ -177,6 +191,11 @@ def main():
             'camera_intrinsic':list(info.K),'camera_dist_coeffs':list(info.D) or [0.]*5,
             'camera_ext_R':imu_camera[:3,:3].reshape(-1).tolist(),
             'camera_ext_t':imu_camera[:3,3].tolist()}
+        # Reuse the exact selected camera calibration, including the optical/link
+        # rotation read from the camera driver. Never substitute measured mount values.
+        config['scout_project_interface']={
+            'imu_to_camera_optical':imu_camera.reshape(-1).tolist(),
+            'imu_to_camera_link':(imu_camera@np.linalg.inv(camera_optical)).reshape(-1).tolist()}
         config['r3live_common']['map_output_dir']=str(directory/'output')
         (directory/'output').mkdir()
         runtime=directory/'runtime.yaml'
@@ -189,8 +208,14 @@ def main():
             'imu_stamp':imu.header.stamp.to_sec(),'calibration_status':
                 'operator_accepted_spatial_only' if calibration_record else rig['calibration_status'],
             'meaning':'Startup clock sanity only; not temporal or geometric calibration'},indent=2))
-        estimator=launch('estimator',['runtime_config:='+str(runtime)])
+        estimator=launch('estimator',['runtime_config:='+str(runtime),
+                                     'project_interface:='+str(project_interface).lower()])
         wait_stable(ALL_STREAMS,60)
+        if project_interface:
+            aligned=rospy.wait_for_message('/fastlio_odom',Odometry,timeout=5)
+            if (aligned.header.frame_id,aligned.child_frame_id)!=('odom','base_link'):
+                raise RuntimeError('Project interface odometry frame mismatch')
+            listener.waitForTransform('odom','base_link',aligned.header.stamp,rospy.Duration(5))
         if recorder is not None and not any(p.stat().st_size > 1024
                                            for p in directory.glob('*.bag*')):
             raise RuntimeError('Recorder has not created a non-empty bag')

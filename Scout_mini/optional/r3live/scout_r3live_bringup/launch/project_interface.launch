@@ -1,0 +1,12 @@
+<launch>
+  <!-- Standalone adapter entry also used for synthetic/offline verification.
+       The R3LIVE mapping node MUST remap its native /tf to /r3live/tf_raw. -->
+  <arg name="runtime_config" />
+  <include file="$(find scout_tf_manager)/launch/tf_manager.launch" />
+  <node pkg="scout_r3live_bringup" type="project_interface_node"
+        name="scout_r3live_project_interface" output="screen" required="true">
+    <rosparam command="load" file="$(arg runtime_config)" />
+    <rosparam command="load" file="$(find scout_tf_manager)/config/extrinsics.yaml" />
+    <rosparam command="load" file="$(find scout_system_bringup)/config/scout_geometry.yaml" />
+  </node>
+</launch>

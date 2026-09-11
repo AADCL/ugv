@@ -1,5 +1,6 @@
 <launch>
   <arg name="runtime_config" />
+  <arg name="project_interface" default="false" />
   <rosparam command="load" file="$(arg runtime_config)" />
   <param name="LiDAR_pointcloud_topic" value="/r3live/laser_cloud_flat" />
   <param name="IMU_topic" value="/livox/imu" />
@@ -10,6 +11,8 @@
     <remap from="/laser_cloud_sharp" to="/r3live/laser_cloud_sharp" />
   </node>
   <node pkg="r3live" type="r3live_mapping" name="r3live_mapping" output="screen" required="true">
+    <!-- The adapter alone owns the project's dynamic TF; retain raw TF for diagnostics. -->
+    <remap from="/tf" to="$(eval '/r3live/tf_raw' if arg('project_interface') else '/tf')" />
     <remap from="/cloud_registered" to="/r3live/cloud_registered" />
     <remap from="/cloud_effected" to="/r3live/cloud_effected" />
     <remap from="/Laser_map" to="/r3live/laser_map" />
@@ -22,4 +25,7 @@
     <remap from="/camera_odom" to="/r3live/camera_odometry" />
     <remap from="/camera_path" to="/r3live/camera_path" />
   </node>
+  <include if="$(arg project_interface)" file="$(find scout_r3live_bringup)/launch/project_interface.launch">
+    <arg name="runtime_config" value="$(arg runtime_config)" />
+  </include>
 </launch>

@@ -6,9 +6,19 @@
   <maintainer email="maintainers@example.com">Scout maintainers</maintainer>
   <license>BSD-3-Clause</license>
   <buildtool_depend>catkin</buildtool_depend>
+  <depend>roscpp</depend>
+  <depend>geometry_msgs</depend>
+  <depend>message_filters</depend>
+  <depend>tf2_ros</depend>
+  <depend>eigen</depend>
+  <build_depend>nav_msgs</build_depend>
+  <build_depend>sensor_msgs</build_depend>
+  <exec_depend>scout_tf_manager</exec_depend>
+  <exec_depend>scout_system_bringup</exec_depend>
   <exec_depend>r3live</exec_depend>
   <exec_depend>rospy</exec_depend>
   <exec_depend>rosnode</exec_depend>
+  <exec_depend>rosgraph</exec_depend>
   <exec_depend>roslaunch</exec_depend>
   <exec_depend>rosbag</exec_depend>
   <exec_depend>rospkg</exec_depend>

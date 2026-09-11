@@ -400,7 +400,7 @@ rosrun scout_system_bringup scout_fusion_test.py
 ~/r3live_ws/start_scout_r3live.sh
 ```
 
-这一条命令启动 Mid-360、D435i 彩色流和 R³LIVE；连续检查传感器时间，自动读取相机内参、内部光学TF，生成本次运行配置，再检查估计输出。保持静止，等待终端提示 `READY`，再由现场人员决定是否进行低速测试。READY后默认600秒结束（test_duration允许30～1800秒）。该入口不启动底盘、遥控、NDT、轮速融合、地图转换或导航，也不会发布速度指令。
+这一条命令启动 Mid-360、D435i 彩色流、R³LIVE及工程接口适配（`project_interface:=true`默认开启）；连续检查传感器时间，读取相机内参、内部光学TF，生成本次运行配置，再检查估计输出及`odom→base_link`。在水平地面保持静止，等待终端提示 `READY`，再由现场人员决定是否低速测试。READY后默认600秒结束（test_duration允许30～1800秒）。该入口不启动底盘、遥控、NDT、轮速融合、地图转换或导航，也不会发布速度指令。
 
 只检查包、几何配置和节点冲突、不启动传感器：
 
@@ -416,15 +416,22 @@ rostopic hz /r3live/odometry
 rostopic hz /r3live/camera_odometry
 rostopic hz /r3live/track_image
 rosrun tf tf_echo r3live_world r3live_imu
+rostopic hz /fastlio_odom
+rostopic hz /cloud_registered_base
+rosrun tf tf_echo odom base_link
 ```
 
-RViz 的 Fixed Frame 设为 `r3live_world`，点云选 `/r3live/cloud_registered`，轨迹选 `/r3live/path`。这里是独立局部原点，里程计位置对应 **雷达IMU原点**，不是 `base_link`；不能直接与旧系统XY相减，也不能直接代替导航输入。相机驱动内部TF另成一棵树，当前没有把试验坐标系接入 `map/odom`。
+RViz 的 Fixed Frame 设为 `odom`，点云选 `/cloud_registered`，车体位姿选 `/fastlio_odom`，原始轨迹仍选 `/r3live/path`，TF会完成显示转换。`/r3live/odometry`仍对应原始IMU原点；`/fastlio_odom`已转换为`odom/base_link`，此名称是旧工程的兼容接口，在当前模式下数据来源是R³LIVE。首帧车体在odom下归零，不能据此与另一轮启动的数据直接相减。
+
+适配默认自动输出`/Odometry`（camera_init/body）、`/cloud_registered`（camera_init）、`/cloud_registered_body`（body）、`/cloud_registered_base`（base_link）和`/fastlio_odom`（odom/base_link）。这些接口供现有Bayesian建图、地形过滤和NDT消费；只适配当前配准扫描，不将彩色累计地图当成静态地图。适配不额外降采样，原始R³LIVE算法自身的采样配置保留。位姿输出不提供可用twist，导航速度继续使用原`/scout/odom`。
+
+完整转换和TF所有权见详细信息表。相机、雷达和原始R³LIVE帧现在均接入工程TF树。不要再同时启动FAST-LIO、`tf_manager.launch`、旧pose/cloud adapter或原`scout_localization.launch`；它们会争用同一接口。入口在启动前检查既有发布者。需要旧纯独立观察模式时传`project_interface:=false`，并将RViz切回`r3live_world`及`/r3live/cloud_registered`。
 
 120桌面保存`Scout_R3LIVE.rviz`及`Scout_R3LIVE.desktop`（Scout R3LIVE Viewer快捷入口）。已启动定位后，可双击快捷入口，或执行`~/r3live_ws/view_scout_r3live.sh ~/Desktop/Scout_R3LIVE.rviz`。已有RViz可通过File → Open Config打开桌面的.rviz。不要使用上游示例的/world、/path、/aft_mapped_to_init、/RGB_map_N话题。
 
 配置默认显示当前配准点云（不累积旧扫描）、青色LIO轨迹、紫红色相机轨迹、两路原点坐标轴、视觉跟踪图和1米网格；关闭未经验证的里程计协方差显示。轨迹分别对应IMU与相机原点，两条线间的杆臂偏移不是定位误差。初始视角固定世界坐标，Views可选择俯视或跟随IMU；后者会包含雷达安装倾角。车离开视野时用FocusCamera或切换跟随视角。默认不启用RGB全局地图以减轻Jetson负载，需要时勾选RGB map chunks 0-4组；只显示这5个分块，更大地图须按实际/r3live/RGB_map_N增加显示项。配置没有2D Pose Estimate或导航目标工具，因为当前R³LIVE不消费这些重定位/导航命令。
 
-当前R³LIVE不提供可直接使用的旧地图全局重定位或完整回环后端；重启产生新的局部原点，也不能承诺跟踪丢失后自动找回地图位置。后续可适配已有NDT：将R³LIVE的世界系/IMU位姿和点云统一到原定位接口，再由NDT估计map→odom。现有FAST-LIO链路的NDT不会自动作用到独立R³LIVE。
+当前R³LIVE不提供旧地图全局重定位或完整回环后端；重启产生新的局部原点，也不能承诺跟踪丢失后自动找回地图位置。接口已满足原NDT的`/cloud_registered_base`与`/fastlio_odom`输入约定，但本入口不启动NDT，也不发布`map→odom`。后续全局定位仍由原NDT负责；本次通过的是接口合成测试，不代表R³LIVE+NDT实车导航已验收。不要用原`scout_localization.launch`来补NDT，该入口会同时启动FAST-LIO。
 
 停车后 Ctrl+C。每次日志位于 `~/r3live_ws/logs/<日期时间_唯一后缀>/`：`sensors.log`、`estimator.log`、`runtime.yaml`、`rig_snapshot.yaml`、`sensor_snapshot.json`、`ready.json`、`health.json`和`session_result.json`。通用start_scout_r3live.sh默认不录bag，下面的专用test入口自动录制。不保存可用于现有导航的地图，不启用上游离线网格重建；`output/` 是上游工作目录，不代表已经生成可用地图。
 
@@ -467,7 +474,7 @@ timeout --signal=INT --kill-after=20s 600s rosbag record --split --size=1024 --b
   -o ~/r3live_ws/logs/manual_bags/manual_test \
   /livox/lidar /livox/imu /r3live_camera/color/image_raw \
   /r3live_camera/color/camera_info /r3live_camera/color/metadata /tf_static \
-  /r3live/odometry /r3live/camera_odometry /rosout
+  /r3live/odometry /r3live/camera_odometry /tf /r3live/tf_raw /Odometry /fastlio_odom /rosout
 ```
 
 录制结束后用`rosbag info <实际bag路径>`检查消息数量与时长；.bag.active仍表示未完成关闭。raw图像约14MB/s，测试前检查剩余空间。回放只选择必要传感器和内部静态TF，不将记录的旧估计输出重新喂入同名在线估计器。
