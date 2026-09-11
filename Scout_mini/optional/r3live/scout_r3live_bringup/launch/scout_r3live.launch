@@ -2,6 +2,8 @@
   <arg name="start_lidar" default="true" />
   <arg name="start_camera" default="true" />
   <arg name="check_only" default="false" />
+  <arg name="record_bag" default="false" />
+  <arg name="test_duration" default="600" />
   <arg name="calibration_file" default="" />
   <arg name="rig_file" default="$(find scout_r3live_bringup)/config/rig.yaml" />
   <arg name="output_root" default="$(env HOME)/r3live_ws/logs" />
@@ -9,6 +11,8 @@
     <param name="start_lidar" value="$(arg start_lidar)" />
     <param name="start_camera" value="$(arg start_camera)" />
     <param name="check_only" value="$(arg check_only)" />
+    <param name="record_bag" value="$(arg record_bag)" />
+    <param name="test_duration" value="$(arg test_duration)" />
     <param name="calibration_file" value="$(arg calibration_file)" />
     <param name="rig_file" value="$(arg rig_file)" />
     <param name="output_root" value="$(arg output_root)" />

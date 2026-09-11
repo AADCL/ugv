@@ -464,8 +464,9 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 | 入口/launch | 参数 | 实际功能 |
 |---|---|---|
 | `~/r3live_ws/start_scout_r3live.sh` | 透传所有launch参数 | 设置含新版cv_bridge和相机插件的环境，调用下行入口 |
+| `~/r3live_ws/start_scout_r3live_test.sh` | 默认已选六场景外参、record_bag=true、test_duration=600、试用sessions目录 | 充电后直接实车测试的入口；自动检查和录包，旧试用start.sh也转到此入口 |
 | `~/r3live_ws/calibration/trials/indoor_20260911_01/start.sh` | 透传launch参数；自动指定trial_calibration.yaml | 已选六场景loose候选的室内试用；原配置备份在同目录backup/，试用授权不是精度验收 |
-| `scout_r3live_bringup/scout_r3live.launch` | `check_only=false`、`start_lidar=true`、`start_camera=true`、`rig_file`、`output_root=~/r3live_ws/logs` | 唯一用户入口；由session依次启动传感器、生成配置、启动估计器 |
+| `scout_r3live_bringup/scout_r3live.launch` | check_only=false、start_lidar=true、start_camera=true、calibration_file空、rig_file、output_root=~/r3live_ws/logs、record_bag=false、test_duration=600 | session拥有传感器、检查、估计器和可选录包；实车使用墙钟，不允许use_sim_time |
 | `scout_r3live_bringup/sensors.launch` | `start_lidar`、`start_camera` | 引用现有Mid-360驱动和r3live_ws内重编的RealSense彩色流；通常不要单独调用 |
 | `scout_r3live_bringup/estimator.launch` | 必填`runtime_config` | 前端＋R³LIVE，不启动任何驱动；隔离回放使用 |
 | 上游`r3live`示例launch | 不作为Scout入口 | 其Avia、示例相机标定及旧话题不适用于本车 |
@@ -475,6 +476,7 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 | 节点 | 包/可执行文件 | 职责/退出关系 |
 |---|---|---|
 | `/scout_r3live_session` | scout_r3live_bringup/session.py | 启动监督、配置快照；退出时只清理自己创建的子进程 |
+| `/record_<自动后缀>` | rosbag/record，record_bag=true时 | 1GiB分包、128MiB录包buffer；仅订阅白名单，随session结束；不独立重复录同一组数据 |
 | `/livox_lidar_publisher2` | livox_ros_driver2，沿用现有驱动launch | Mid-360数据；不允许同时启动第二个同名驱动 |
 | `/r3live_camera/realsense2_camera_manager` | nodelet/nodelet manager | RealSense相机进程 |
 | `/r3live_camera/realsense2_camera` | realsense2_camera/RealSenseNodeFactory nodelet | 彩色流、CameraInfo、内部TF |
@@ -539,14 +541,20 @@ r3live_camera_link ──[RealSense内部TF]──> r3live_camera_color_frame
 | 3.等待CameraInfo或image超时 | USB、相机是否被其他进程占用、sensors.log | 确保D435i彩色流独占；深度或奥比话题不能顶替彩色内参 |
 | 4.时钟粗检失败 | 原始图像/IMU stamp，系统和传感器时间 | 先修时间同步；不篡改消息stamp强行通过 |
 | 5.前端无点云 | `/livox/lidar`类型、point_num、tag/line、blind | 必须是driver2 CustomMsg，非PointCloud2；检查实际扫描点数 |
-| 6.有LIO无相机位姿 | 图像频率、外参方向、视野内雷达点、纹理、estimator.log | 45秒输出等待失败结束试验；有图像并不意味着视觉成功更新 |
+| 6.有LIO无相机位姿 | 图像频率、外参方向、视野内雷达点、纹理、estimator.log | 输出阶段60秒未连续通过5秒检查则结束试验；有图像并不意味着视觉成功更新 |
 | 7.RViz报世界帧错误 | Fixed Frame及实际消息header | 用r3live_world；不要把独立局部原点当作odom/map |
 | 8.图像卡顿或CPU过高 | 两路定位是否并开、实际帧率和图像队列 | 保持单入口运行；本版并未证明Jetson所有场景实时性 |
 | 9.能运行但轨迹漂 | 外参/时间标定、视觉跟踪、激光退化和实测基准 | 当前输出正常测试不能代替精度验收；不修改导航参数掩盖问题 |
+| 10.WARMUP迟迟不READY | 原图/IMU/Lidar并行接收年龄、source时间单调性，health/session_result | 传感器60秒内须连续健康5秒；不改写stamp强行通过 |
+| 11.RUNTIME_INVALID | session_result.fault中的stream、reason、stamp；bag的metadata | READY后时钟、帧、非法位姿或断流故障锁定并退出；人工停车，检查后重启新会话 |
+| 12.自动退出/录包结束 | outcome、test_duration、磁盘空间、*.bag.active | 默认READY后10分钟结束；低于3GiB也结束。正常bag需关闭可读，roslaunch返回码不代表验收成功 |
+| 13.入口立即返回75 | .scout_r3live.lock由另一个入口持有 | 停车退出已有测试；不要删除锁文件；进程退出自动释放锁 |
 
 试用文件约定：`trial_calibration.yaml`的矩阵为`p_camera_optical=T_camera_lidar*p_lidar`，位置单位米；session转换为`T_imu_camera=T_imu_lidar*inverse(T_camera_lidar)`。`status=operator_accepted`表示允许加载，`approval_scope=indoor_trial_only`和`independent_accuracy_validation=not_passed`限定用途；启动生成的`runtime.yaml`需与`expected_runtime_extrinsic.yaml`逐项核对。原外参、入口和哈希在`backup/`及`backup_hashes.yaml`。本试用没有新增导航TF或底盘速度话题。
 
-可选`observe_indoor.py`创建匿名r3live_indoor_observer节点，仅订阅本表的原图、IMU、LIO/相机位姿与跟踪图，不发布任何话题；`--seconds`默认30、允许10～120，`--output`必填且拒绝覆盖。输出连续性和时钟粗检分别报告，定位精度须另有实测基准。可选rosbag还订阅`/r3live_camera/color/metadata`（realsense2_camera/Metadata，相机manager发布，含clock_domain、frame_timestamp、time_of_arrival），用于复核驱动时间；录制不是默认一键入口的一部分。
+可选`observe_indoor.py`创建匿名r3live_indoor_observer节点，仅订阅本表的原图、IMU、LIO/相机位姿与跟踪图，不发布任何话题；`--seconds`默认30、允许10～120，`--output`必填且拒绝覆盖。输出连续性和时钟粗检分别报告，定位精度须另有实测基准。rosbag还订阅`/r3live_camera/color/metadata`（realsense2_camera/Metadata，相机manager发布，含clock_domain、frame_timestamp、time_of_arrival），用于复核驱动时间；通用入口按需启用，专用test入口自动录制。
+
+session内部额外读取原图、IMU、原始雷达、LIO和相机位姿，持续健康检查不增加节点/发布话题。传感器年龄-0.1～0.5秒、位姿年龄-0.1～1秒，断流2秒、ROS/monotonic相邻增量差0.2秒；源码runtime_health.py集中定义。每路仅保留256个年龄样本；health.json为统计快照，完整输入来自bag。observe_indoor.py的sensor_clock_sanity也按min/max逐样本判断，不能只看中位数。
 
 ## 相机—雷达标定CLI、话题与保护
 

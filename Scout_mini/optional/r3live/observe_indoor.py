@@ -2,6 +2,7 @@
 """Bounded stationary diagnostics; never commands the vehicle or claims accuracy."""
 import argparse
 import json
+import statistics
 from pathlib import Path
 import threading
 import time
@@ -37,7 +38,8 @@ for name, topic, kind in (
     ('imu', '/livox/imu', Imu),
     ('tracking', '/r3live/track_image', Image),
 ):
-    rospy.Subscriber(topic, kind, lambda m, n=name: receive(n, m), queue_size=100)
+    rospy.Subscriber(topic, kind, lambda m, n=name: receive(n, m), queue_size=100,
+                     buff_size=4*1024**2,tcp_nodelay=True)
 deadline = time.monotonic() + a.seconds
 while time.monotonic() < deadline and not rospy.is_shutdown():
     time.sleep(.1)
@@ -50,11 +52,13 @@ for name, rows in snapshot.items():
     stat = {'count': len(rows)}
     if len(rows) > 1:
         data = np.asarray(rows)
+        ages = [row[2]-row[1] for row in rows]
         stamp_diff = np.diff(data[:, 1])
         stat.update(rate_hz=float((len(rows)-1)/(data[-1, 0]-data[0, 0])),
                     non_increasing_stamps=int(np.count_nonzero(stamp_diff <= 0)),
                     max_arrival_gap_s=float(np.diff(data[:, 0]).max()),
-                    median_age_s=float(np.median(data[:, 2]-data[:, 1])),
+                    median_age_s=statistics.median(ages),
+                    min_age_s=min(ages), max_age_s=max(ages),
                     first_source_stamp=float(data[0, 1]),
                     last_source_stamp=float(data[-1, 1]),
                     last_arrival_age_s=float(time.monotonic()-data[-1, 0]))
@@ -78,7 +82,8 @@ for name, rows in snapshot.items():
 report['continuous_finite_outputs'] = bool(healthy)
 report['sensor_clock_sanity'] = bool(all(
     'median_age_s' in report['topics'][name]
-    and -.1 < report['topics'][name]['median_age_s'] < .5
+    and -.1 <= report['topics'][name]['min_age_s']
+    and report['topics'][name]['max_age_s'] <= .5
     for name in ('image', 'imu')))
 with Path(a.output).open('x') as handle:
     json.dump(report, handle, indent=2, allow_nan=False)

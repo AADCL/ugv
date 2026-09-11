@@ -40,3 +40,20 @@
 相对路径均位于`~/r3live_ws/calibration/trials/indoor_20260911_01/`，共约2.1GiB。保留Livox原始点云/IMU、raw彩色图/内参/元数据、tf_static、两路位姿和rosout；16:28的那次已确认运动早于录包，不在这些bag里。
 
 本地`D:/设备文档/scout_calibration_review_20260911/`保留配置备份归档及会话诊断。大bag保留设备，不上传GitHub。当前通过真实启动与输出检查；精确外参、时间标定、运动精度、返回起点误差及长管廊性能仍待后续测试。充电后用同一试用start.sh新建会话，观察和bag文件使用新名字。
+
+## 充电期间收尾验证
+
+新入口`~/r3live_ws/start_scout_r3live_test.sh`和旧试用start.sh统一为：读取已选外参、检查运行库、进程互斥、启动传感器及录包、连续时间预热、启动估计器、连续输出检查、READY、故障锁定/到期退出及结果保存。没有改动已选矩阵、导航参数或C++估计算法。新增检查集中在runtime_health.py，五路流每路只保留256个年龄样本；单次异常不再被中位数掩盖。
+
+40秒专门时间采样保留ROS/系统/单调时钟、源整数秒/纳秒、相机metadata。在该批598帧图像中，年龄范围19.7～140.8ms、中位59.6ms；8006条IMU年龄0.11～6.17ms、中位0.36ms。原生标量、整数时间差和numpy交叉计算一致。此前-1.9秒异常未复现，不能宣称已证明硬件时钟根因；已修正只看一次启动样本、仅看中位数及没有运行故障退出的问题。新入口发现未来/过期/跳变时刻会拒绝READY或锁定退出，不改写时间戳。
+
+8项RuntimeHealth回归测试在本地及Jetson通过：连续预热、启动前异常恢复、READY后未来图像锁定、单流断流、重复时间/帧变化、系统时钟跳变、非法位姿/四元数、有界内存。
+
+两轮真实硬件验收（READY后test_duration=30）：
+
+| sessions子目录 | 结果 | 记录 |
+|---|---|---|
+| 20260911_165301_egtxb90n | duration_complete、fault=null | 自动录sensors_0.bag，无未完成bag |
+| 20260911_170018__m0ahbts | 最终session脚本及旧入口验证，duration_complete、fault=null | 自动录sensors_0.bag，无未完成bag |
+
+最终一轮视觉日志tracked102～112，geometric=1、photometric=1；原始传感器、两路位姿连续通过检查。测试结束后估计器、录包和相机进程全部退出，不在充电时持续运行。原文件备份`~/r3live_ws/calibration/runtime_hardening_20260911/before_fix.tar.gz`。准备完成表示可以开始人工实测，不是运动精度认证。

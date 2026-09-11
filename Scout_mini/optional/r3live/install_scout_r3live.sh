@@ -46,8 +46,10 @@ else
 fi
 cp -a "$task_assets/scout_r3live_bringup" "$task_ws/src/"
 cp "$task_assets/start_scout_r3live.sh" "$task_ws/"
+cp "$task_assets/start_scout_r3live_test.sh" "$task_ws/"
 cp "$task_assets/check_opencv_runtime.py" "$task_assets/observe_indoor.py" "$task_ws/"
 chmod +x "$task_ws/start_scout_r3live.sh" "$task_ws/src/scout_r3live_bringup/scripts/session.py"
+chmod +x "$task_ws/start_scout_r3live_test.sh"
 cd "$task_ws"
 catkin_make -j1 -DCMAKE_BUILD_TYPE=Release -DR3LIVE_BUILD_MESHING=OFF
 source "$task_ws/devel/setup.bash"

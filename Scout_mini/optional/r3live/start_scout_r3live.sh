@@ -11,4 +11,7 @@ test -f "$task_workspace/devel/lib/librealsense2_camera.so" || {
   echo 'Install the R3LIVE camera overlay before starting.' >&2; exit 1;
 }
 python3 "$task_workspace/check_opencv_runtime.py" "$task_workspace"
-exec roslaunch scout_r3live_bringup scout_r3live.launch "$@"
+# Acquire before roslaunch registers its fixed session node; otherwise a second
+# launch could shut down the first node before the Python conflict check runs.
+exec flock --nonblock --conflict-exit-code 75 "$task_workspace/.scout_r3live.lock" \
+  roslaunch scout_r3live_bringup scout_r3live.launch "$@"

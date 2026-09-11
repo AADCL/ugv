@@ -684,7 +684,8 @@ python3 src/scout_odom_fusion/test/test_isolated_ekf.py --profile wheel_priority
 |---|---|
 | `install_scout_r3live.sh` | 创建独立workspace，固定上游提交，检查并应用补丁，复制自有包，串行编译；遇到不同提交的脏目录拒绝覆盖 |
 | `scout-r3live.patch` | 所有上游修改的完整统一diff，保留上游许可；不能只应用其中一部分 |
-| `start_scout_r3live.sh` | source独立overlay，要求存在新相机库；不前置旧相机包路径，执行独立launch |
+| `start_scout_r3live.sh` | source独立overlay，要求存在新相机库；不前置旧相机包路径，ldd检查后通过flock非阻塞锁执行独立launch；重复入口在注册同名ROS节点之前退出75 |
+| `start_scout_r3live_test.sh` | 专用实车入口，校验已选试用外参文件存在，设置record_bag=true、test_duration=600和试用sessions目录；全部ROS参数仍可透传 |
 | `scout-realsense-opencv.patch` | 在相机CMakeLists显式查找OpenCV，将其include和library加入目标；随overlay的cv_bridge统一版本，不修改旧realsense_ws |
 | `check_opencv_runtime.py` | 用ldd检查相机、cv_bridge、三种图像插件及mapping；缺库或不是单一OpenCV4.5时失败 |
 | `calibration/prepare_indoor_trial.py` | 核对用户选定六场景loose矩阵、备份默认配置及哈希、新建独立试用外参和start.sh；拒绝重复目录，试用授权不表示精度验收 |
@@ -694,7 +695,9 @@ python3 src/scout_odom_fusion/test/test_isolated_ekf.py --profile wheel_priority
 | `launch/scout_r3live.launch` | 用户入口、check_only和传感器开关、日志目录参数 |
 | `launch/sensors.launch` | Mid-360驱动与D435i彩色640×480@15Hz；关闭深度、红外、相机IMU、相机点云 |
 | `launch/estimator.launch` | 加载完整运行配置，启动前端和估计器，隔离输出话题 |
-| `scripts/session.py` | 冲突检查、等待真实传感器和相机TF、生成运行快照、等待两路位姿、维护并退出自己创建的进程 |
+| `scripts/session.py` | 冲突检查（含相机manager）、实时时钟要求、并发订阅五路流、分阶段连续预热、生成外参快照、可选录bag、READY与运行故障锁定、按顺序退出自己的估计器/录包/传感器并保存结果 |
+| `scripts/runtime_health.py` | 不依赖ROS的流状态检查；observe/problems/arm/check/snapshot接口；每路最多256个接收年龄，检查时间/帧/位姿，READY后首个故障锁定到退出 |
+| `test_runtime_health.py` | 8项测试覆盖预热不足、未来相机时间及启动前恢复、READY后故障锁定、单流断流、重复时间/帧变化、系统时钟跳变、非法位姿和有界内存 |
 | `test_frontend.py` | 私有master下验证360°、非法点过滤、时间和畸形消息拒绝 |
 | `test_camera_config.py` | 验证真实图像/内参/光学TF并生成回放配置，写到`/tmp` |
 | `test_observe.py` | 回放位姿有限值、四元数、帧名和时间单调检查；不输出定位精度结论 |
@@ -737,6 +740,30 @@ python3 ~/github_upload/ugv/Scout_mini/optional/r3live/check_opencv_runtime.py ~
 2026-09-11真机发现旧相机nodelet在compressed图像发布时SIGSEGV：core回溯为OpenCV4.5的cvtColor调用4.2的_OutputArray::create，且旧RealSense库直接链接两版OpenCV。修复范围为独立overlay内的相机与插件，不修改原导航工作空间。仅检查mapping的ldd不足以验收整条图像链路，必须再检查相机进程`/proc/<PID>/maps`及真实图像订阅。
 
 室内试用部署：先完成上述安装，再运行`python3 ~/r3live_ws/calibration_tools/prepare_indoor_trial.py <新试用名> --confirm-trial`。脚本由`calibration/install_calibration.sh`复制到设备，无需单独编译Python。它固定读取`prior_robust_final_20260911/loose.yaml`，校验已审阅矩阵，输出`calibration/trials/<新试用名>/backup/`、`backup_hashes.yaml`、`trial_calibration.yaml`、`expected_runtime_extrinsic.yaml`和`start.sh`；不适用于任意其他候选。运行生成的start.sh，核对会话runtime.yaml的R/t与expected_runtime_extrinsic.yaml一致，再验证视觉输出。回退时停车退出试用入口，原默认rig/estimator未被覆盖，直接使用原入口即可；不要把整棵试用目录的备份覆盖到不同版本工程。
+
+2026-09-11充电期间的入口收尾：直接编辑上表完整文件后运行安装脚本，它复制Python、launch、两种入口并执行catkin_make -j1。CMakeLists.txt将calibration_io.py和runtime_health.py一起安装到catkin可执行目录，避免安装空间缺少辅助模块。无需修改R³LIVE C++定位算法或重新标定。已存在试用目录的start.sh只改为`exec /home/nvidia/r3live_ws/start_scout_r3live_test.sh "$@"`；原文件已在`calibration/runtime_hardening_20260911/before_fix.tar.gz`中备份。
+
+运行约定：session的image/imu/lidar/lio/camera订阅同时建立，queue_size=10、接收buffer4MiB、tcp_nodelay。每条消息复制源stamp、ROS接收时间、monotonic接收时间和frame；不修改原消息，不发布新TF或中间话题。传感器接收年龄范围-0.1～0.5秒、位姿输出-0.1～1秒；超过2秒断流、相邻ROS与monotonic增量差超过0.2秒、源时间重复/倒退及坐标帧变化均异常。位姿要求有限、单位四元数误差不超过1e-3，父帧r3live_world、子帧r3live_imu或r3live_camera_optical。
+
+启动先等传感器连续有效5秒，再生成配置、启动估计器、等全部流连续有效5秒，每阶段限60秒。预热期允许恢复并重新累计，READY后异常锁定，不自动复位。静止是操作者要求，健康检查没有独立真值，不用运动量门限误判正常行驶。record_bag=true时，recorder从预热开始记录，READY前确认非空bag文件；上层每0.2秒检查故障/子进程/磁盘，每5秒保存health.json。test_duration从READY算，30～1800秒，默认600；结束或故障依次关闭估计器、录包及传感器。文件中的incomplete_bags非空意味着仍需恢复，不能当成正常录制。
+
+完整验证命令：
+
+```bash
+cd ~/github_upload/ugv
+bash Scout_mini/optional/r3live/install_scout_r3live.sh
+python3 Scout_mini/optional/r3live/test_runtime_health.py
+python3 -m py_compile ~/r3live_ws/src/scout_r3live_bringup/scripts/session.py \
+  ~/r3live_ws/src/scout_r3live_bringup/scripts/runtime_health.py
+~/r3live_ws/start_scout_r3live_test.sh check_only:=true
+# 停车、确认没有其他定位链路；自动结束的真实验收：
+~/r3live_ws/start_scout_r3live_test.sh test_duration:=30
+# 用终端给出的实际会话目录替换，不通过roslaunch返回0推断成功：
+cat <本次会话目录>/session_result.json
+rosbag info <本次会话目录>/sensors_0.bag
+```
+
+验收要求ready.json存在、最终outcome=duration_complete、fault=null、incomplete_bags为空，录包包含原始雷达/IMU/彩色图/内参/metadata/tf_static及两路位姿；estimator.log中视觉几何和光度更新有成功记录。check_only不启动硬件，只校验文件及配置，不能替代真实验收。该实车session拒绝use_sim_time；离线回放继续使用独立estimator.launch。
 
 ### 4. 坐标与标定代码约定
 

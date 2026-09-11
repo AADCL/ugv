@@ -21,3 +21,5 @@ bash Scout_mini/optional/r3live/install_scout_r3live.sh
 `config/rig.yaml`的外参是安装尺寸初值。相机内参/内部光学TF启动时从设备读取。`/r3live/odometry`表示独立局部原点下的IMU位姿，不是车体位姿，不能直接替换原`/fastlio_odom`或导航TF。
 
 新增[Scout端相机—雷达标定工具](calibration/README.md)：静态采集、driver2导出、多场景无GUI求解、独立投影验证和显式接受。设备入口`~/r3live_ws/scout_calibrate.sh`。得到接受文件后，通过`calibration_file:=...`给独立R³LIVE使用；不会自动替换安装初值，不估计时间偏移。
+
+充电后测试使用`~/r3live_ws/start_scout_r3live_test.sh`：加载已选六场景外参，自动启动驱动、连续时间检查、估计器和bag记录；看到`READY`再人工低速运动。READY后默认10分钟自动结束，`test_duration:=60`可改测试时长（30～1800秒）。停车Ctrl+C可提前结束，终端异常时人工停车；程序没有底盘控制权。日志、原始bag、ready/health/session_result.json统一在本次sessions目录。发现时钟/断流/非法位姿后锁定失效、退出自己的进程，不自动复位重启。旧试用目录start.sh已指向此入口。

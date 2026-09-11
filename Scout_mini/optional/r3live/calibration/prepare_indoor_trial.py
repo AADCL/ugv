@@ -46,7 +46,7 @@ record={'schema':1,'status':'operator_accepted','approval_scope':'indoor_trial_o
 dump(trial/'trial_calibration.yaml',record)
 imu_lidar=np.eye(4); imu_lidar[:3,3]=record['lidar_to_imu_translation']
 dump(trial/'expected_runtime_extrinsic.yaml',{'T_imu_camera':rigid_matrix(imu_lidar@np.linalg.inv(t)).tolist()})
-start='#!/usr/bin/env bash\nset -eo pipefail\nexec /home/nvidia/r3live_ws/start_scout_r3live.sh calibration_file:='+shlex.quote(str(trial/'trial_calibration.yaml'))+' "$@"\n'
+start='#!/usr/bin/env bash\nset -eo pipefail\nexec /home/nvidia/r3live_ws/start_scout_r3live.sh calibration_file:='+shlex.quote(str(trial/'trial_calibration.yaml'))+' output_root:='+shlex.quote(str(trial/'sessions'))+' record_bag:=true test_duration:=600 "$@"\n'
 (trial/'start.sh').write_text(start); (trial/'start.sh').chmod(0o755)
 dump(trial/'backup_hashes.yaml',{f.name:digest(f) for f in backup.iterdir()})
 print('TRIAL_READY '+str(trial),flush=True)

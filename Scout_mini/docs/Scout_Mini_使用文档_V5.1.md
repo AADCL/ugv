@@ -396,7 +396,7 @@ rosrun scout_system_bringup scout_fusion_test.py
 ~/r3live_ws/start_scout_r3live.sh
 ```
 
-这一条命令启动 Mid-360、D435i 彩色流和 R³LIVE；自动读取相机内参、内部光学TF，生成本次运行配置，再启动估计器。保持静止，等待终端提示 `LIO and camera pose outputs received`，再由现场人员决定是否进行低速测试。该入口不启动底盘、遥控、NDT、轮速融合、地图转换或导航，也不会发布速度指令。
+这一条命令启动 Mid-360、D435i 彩色流和 R³LIVE；连续检查传感器时间，自动读取相机内参、内部光学TF，生成本次运行配置，再检查估计输出。保持静止，等待终端提示 `READY`，再由现场人员决定是否进行低速测试。READY后默认600秒结束（test_duration允许30～1800秒）。该入口不启动底盘、遥控、NDT、轮速融合、地图转换或导航，也不会发布速度指令。
 
 只检查包、几何配置和节点冲突、不启动传感器：
 
@@ -416,7 +416,7 @@ rosrun tf tf_echo r3live_world r3live_imu
 
 RViz 的 Fixed Frame 设为 `r3live_world`，点云选 `/r3live/cloud_registered`，轨迹选 `/r3live/path`。这里是独立局部原点，里程计位置对应 **雷达IMU原点**，不是 `base_link`；不能直接与旧系统XY相减，也不能直接代替导航输入。相机驱动内部TF另成一棵树，当前没有把试验坐标系接入 `map/odom`。
 
-停车后 Ctrl+C。每次日志位于 `~/r3live_ws/logs/<日期时间_唯一后缀>/`：`sensors.log`、`estimator.log`、`runtime.yaml`、`rig_snapshot.yaml`、`sensor_snapshot.json`。默认不录原始bag，不保存可用于现有导航的地图，不启用上游离线网格重建；`output/` 是上游工作目录，不代表已经生成可用地图。
+停车后 Ctrl+C。每次日志位于 `~/r3live_ws/logs/<日期时间_唯一后缀>/`：`sensors.log`、`estimator.log`、`runtime.yaml`、`rig_snapshot.yaml`、`sensor_snapshot.json`、`ready.json`、`health.json`和`session_result.json`。通用start_scout_r3live.sh默认不录bag，下面的专用test入口自动录制。不保存可用于现有导航的地图，不启用上游离线网格重建；`output/` 是上游工作目录，不代表已经生成可用地图。
 
 **不传calibration_file时，外参仍是安装尺寸初值。** 2026-09-11用户选定六场景loose候选用于室内试用，使用下方专用入口才会加载该矩阵。内参来自真实相机，空间精度及时间偏移尚未独立验收。可以验证启动、图像跟踪和输出连续性；尚不能据此宣布比 FAST-LIO 精度高，或认为暗光、扬尘、无纹理走廊已经解决。配置文件及标定关系见开发文档新增章节；参数、全部试验话题与排错见详细信息表。原 BATF-Nav 的建图、保存和导航流程不变。
 
@@ -425,13 +425,20 @@ RViz 的 Fixed Frame 设为 `r3live_world`，点云选 `/r3live/cloud_registered
 原rig.yaml、estimator.yaml和启动入口已备份到`~/r3live_ws/calibration/trials/indoor_20260911_01/backup/`。试用选取此前六场景画廊的loose候选，不使用后来墙角批次结果。退出其他定位入口、停车后运行：
 
 ```bash
-~/r3live_ws/calibration/trials/indoor_20260911_01/start.sh \
-  output_root:=/home/nvidia/r3live_ws/calibration/trials/indoor_20260911_01/sessions
+~/r3live_ws/start_scout_r3live_test.sh
 ```
 
-该入口自动带入trial_calibration.yaml；每次会话保存runtime.yaml及calibration_snapshot.yaml。原配置未覆盖，停车Ctrl+C退出后可恢复原入口。先静止检查至少30秒，确认LIO和camera_odometry持续输出、跟踪图像正常、没有时间倒退/跳变，再遥控低速短距离直行、转弯、返回。请记录实际行驶距离与是否回到起点；轨迹平滑或两路输出一致不等于定位准确。
+该入口自动带入trial_calibration.yaml并录bag，旧`calibration/trials/indoor_20260911_01/start.sh`也转到此流程。每次使用新会话目录，保存runtime.yaml及calibration_snapshot.yaml，不覆盖原配置。停车等待READY，再遥控低速短距离直行、转弯、返回。请记录实际行驶距离与是否回到起点；轨迹平滑或两路输出一致不等于定位准确。
 
-如提示缺少R3LIVE camera overlay，按开发文档重新执行install_scout_r3live.sh。相机进程exit code -11时先排查OpenCV混用，不要通过反复更换外参或增加等待时间掩盖崩溃。正常入口默认不录bag，录制状态应以实际rosbag进程和输出文件为准。
+启动自动完成两阶段检查：原图、雷达和IMU连续正常至少5秒；随后两路位姿也连续正常至少5秒，再显示READY。各阶段最多等60秒。检查非零/单调源时间、坐标帧、位姿有限值、四元数及接收延迟。READY后持续检查：断流超过2秒、时间倒退/重复、系统时间跳变或非法位姿会锁定失效，停止本次估计并关闭bag。不会自动重启或发送停车指令；看到RUNTIME_INVALID请人工停车。
+
+启动脚本使用进程锁，重复执行时退出码75，不会通过同名session节点顶掉正在运行的测试。不要删除锁文件来并行启动；停车后退出原入口，再启动新测试。
+
+默认READY后录测10分钟自动退出；可用`test_duration:=60`做1分钟试验。测试时长参数允许30～1800秒。停车Ctrl+C可提前结束。启动前按24MiB/s×（时长+240秒）再加3GiB余量检查磁盘；录制时低于3GiB结束测试。不要在这个专用入口旁再启动第二份相同录包命令。
+
+会话目录新增`sensors_*.bag`、`rosbag.log`、`ready.json`、每5秒更新的`health.json`以及退出后的`session_result.json`。后者说明duration_complete/operator_stopped/failed、故障原因、正常和未完成bag列表。异常退出或断电留下.bag.active不能视为完整记录；即使roslaunch返回0，也应以READY及session_result.json确认本次测试状态。
+
+如提示缺少R3LIVE camera overlay，按开发文档重新执行install_scout_r3live.sh。相机进程exit code -11时先排查OpenCV混用，不要通过反复更换外参或增加等待时间掩盖崩溃。通用入口默认不录bag，专用test入口自动录制，录制状态应以实际rosbag进程和输出文件为准。
 
 另一个终端读取30秒对比结果（每次使用新的输出文件名）：
 
@@ -440,7 +447,7 @@ source ~/r3live_ws/devel/setup.bash
 python3 ~/r3live_ws/observe_indoor.py --seconds 30 --output /tmp/r3live_check_01.json
 ```
 
-`continuous_finite_outputs`检查连续、有限、时间单调及四元数；`sensor_clock_sanity`检查接收时刻与图像/IMU时间的粗偏差（-0.1～0.5秒），不能代替时间标定。`max_displacement_from_first_m`和`max_rotation_from_first_deg`是各自物理原点相对首帧的变化：停车时观察稳定性，行驶时只代表运动量，不能当作真值误差或直接相减。跟踪图的header使用发布时刻，不能用于图像时间对齐。
+`continuous_finite_outputs`检查连续、有限、时间单调及四元数；`sensor_clock_sanity`检查每个样本接收时刻与图像/IMU时间的粗偏差（-0.1～0.5秒），不能代替时间标定。报告保留最小/最大/中位接收年龄，单次异常不能被中位数掩盖。`max_displacement_from_first_m`和`max_rotation_from_first_deg`是各自物理原点相对首帧的变化：停车时观察稳定性，行驶时只代表运动量，不能当作真值误差或直接相减。跟踪图的header使用发布时刻，不能用于图像时间对齐。
 
 需要运动复盘时可额外录制原始输入与两路输出，最多10分钟、每1GiB分包；本命令不启动车辆，Ctrl+C可以提前结束。例子会生成带日期的bag，仍应每次使用新的试验前缀：
 
