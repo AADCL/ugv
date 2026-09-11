@@ -5,8 +5,10 @@ source /opt/ros/noetic/setup.bash
 source /home/nvidia/realsense_ws/devel/setup.bash
 source /home/nvidia/livox_fastlio/devel/setup.bash
 source "$task_workspace/devel/setup.bash"
-# catkin's cached underlay omits the separately built camera workspace.
-export ROS_PACKAGE_PATH="/home/nvidia/realsense_ws/src:${ROS_PACKAGE_PATH}"
-export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/home/nvidia/realsense_ws/devel/lib"
-export CMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}:/home/nvidia/realsense_ws/devel"
+# Camera, cv_bridge and image plugins are built in this same OpenCV overlay.
+# Prepending the legacy camera workspace would restore mixed OpenCV ABIs.
+test -f "$task_workspace/devel/lib/librealsense2_camera.so" || {
+  echo 'Install the R3LIVE camera overlay before starting.' >&2; exit 1;
+}
+python3 "$task_workspace/check_opencv_runtime.py" "$task_workspace"
 exec roslaunch scout_r3live_bringup scout_r3live.launch "$@"

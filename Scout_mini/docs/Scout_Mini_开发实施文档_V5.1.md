@@ -670,7 +670,8 @@ python3 src/scout_odom_fusion/test/test_isolated_ekf.py --profile wheel_priority
 | R³LIVE | `https://github.com/hku-mars/r3live.git`，`6143a38537f28cb36eb24e9bbe2e39c8f7967157` | 激光/惯性/视觉局部估计 |
 | vision_opencv | `https://github.com/ros-perception/vision_opencv.git`，`cfabf72fb02970a661b5e68fbee503c5d9f94729` | 在独立overlay中重编译cv_bridge和image_geometry |
 | Livox | 复用已安装的livox_ros_driver2及Mid-360配置 | CustomMsg、IMU输入 |
-| 相机 | `~/realsense_ws` 内的realsense2_camera | D435i彩色图像和出厂内参 |
+| 相机 | IntelRealSense/realsense-ros，`f400d682beee6c216052a419f419e95b797255ad`（2.3.2），在r3live_ws独立重编 | D435i彩色图像和出厂内参 |
+| 图像插件 | ros-perception/image_transport_plugins，`cae592ce0816ea03bc38f0b6d27b6eae907feb10` | 在同一overlay编译compressed、compressedDepth、theora，避免混用OpenCV |
 | 平台 | Ubuntu20.04、Noetic、ARM64、OpenCV4.5.4、Eigen3、PCL、Boost.Python、Python3 numpy/yaml | 保留端侧现有依赖，不替换系统库 |
 
 端侧原 `/opt/ros/noetic` 的cv_bridge链接OpenCV4.2，与本机OpenCV4.5不一致。必须使用新overlay的cv_bridge；直接source旧工作空间后运行新二进制可能重新混用版本。可选CGAL网格重建未启用，核心定位不需要因此安装CGAL。
@@ -683,7 +684,10 @@ python3 src/scout_odom_fusion/test/test_isolated_ekf.py --profile wheel_priority
 |---|---|
 | `install_scout_r3live.sh` | 创建独立workspace，固定上游提交，检查并应用补丁，复制自有包，串行编译；遇到不同提交的脏目录拒绝覆盖 |
 | `scout-r3live.patch` | 所有上游修改的完整统一diff，保留上游许可；不能只应用其中一部分 |
-| `start_scout_r3live.sh` | source独立overlay，补回相机包/plugin搜索路径，执行独立launch |
+| `start_scout_r3live.sh` | source独立overlay，要求存在新相机库；不前置旧相机包路径，执行独立launch |
+| `scout-realsense-opencv.patch` | 在相机CMakeLists显式查找OpenCV，将其include和library加入目标；随overlay的cv_bridge统一版本，不修改旧realsense_ws |
+| `check_opencv_runtime.py` | 用ldd检查相机、cv_bridge、三种图像插件及mapping；缺库或不是单一OpenCV4.5时失败 |
+| `calibration/prepare_indoor_trial.py` | 核对用户选定六场景loose矩阵、备份默认配置及哈希、新建独立试用外参和start.sh；拒绝重复目录，试用授权不表示精度验收 |
 | `scout_r3live_bringup/package.xml`、`CMakeLists.txt` | 自有ROS包依赖、Python可执行脚本、launch/config安装 |
 | `config/rig.yaml` | `T_base_imu`、`T_base_camera_link`，xyz单位m、RPY单位度，明确标记为近似安装尺寸 |
 | `config/estimator.yaml` | Mid-360前端、LIO、VIO公共参数；实际相机K/D和外参由启动器生成 |
@@ -694,6 +698,7 @@ python3 src/scout_odom_fusion/test/test_isolated_ekf.py --profile wheel_priority
 | `test_frontend.py` | 私有master下验证360°、非法点过滤、时间和畸形消息拒绝 |
 | `test_camera_config.py` | 验证真实图像/内参/光学TF并生成回放配置，写到`/tmp` |
 | `test_observe.py` | 回放位姿有限值、四元数、帧名和时间单调检查；不输出定位精度结论 |
+| `observe_indoor.py` | 有限10～120秒读取LIO、相机位姿、raw图像、IMU、跟踪图；保存频率、时间差、间断、相对位移和转角；原地观测必须由人确认停车，返回成功也不是精度合格 |
 
 补丁修改的上游文件相对 `~/r3live_ws/src/r3live/r3live/`：
 
@@ -724,9 +729,14 @@ cd ~/r3live_ws
 catkin_make -j1 -DCMAKE_BUILD_TYPE=Release -DR3LIVE_BUILD_MESHING=OFF
 source devel/setup.bash
 ldd devel/lib/r3live/r3live_mapping | grep -E 'cv_bridge|opencv|not found'
+python3 ~/github_upload/ugv/Scout_mini/optional/r3live/check_opencv_runtime.py ~/r3live_ws
 ```
 
-`r3live_mapping`、`r3live_LiDAR_front_end`、cv_bridge、image_geometry及自有启动包应编译成功。ldd应指向`~/r3live_ws/devel/lib/libcv_bridge.so`，不得出现`not found`或同时加载OpenCV4.2与4.5。源码补丁完整重应用会触发较长编译；Jetson使用`-j1`。
+`r3live_mapping`、`r3live_LiDAR_front_end`、cv_bridge、image_geometry、realsense2_camera、三种图像插件及自有启动包应编译成功。ldd应指向`~/r3live_ws/devel/lib/libcv_bridge.so`，所有检查对象不得出现`not found`或同时加载OpenCV4.2与4.5。源码补丁完整重应用会触发较长编译；Jetson使用`-j1`。
+
+2026-09-11真机发现旧相机nodelet在compressed图像发布时SIGSEGV：core回溯为OpenCV4.5的cvtColor调用4.2的_OutputArray::create，且旧RealSense库直接链接两版OpenCV。修复范围为独立overlay内的相机与插件，不修改原导航工作空间。仅检查mapping的ldd不足以验收整条图像链路，必须再检查相机进程`/proc/<PID>/maps`及真实图像订阅。
+
+室内试用部署：先完成上述安装，再运行`python3 ~/r3live_ws/calibration_tools/prepare_indoor_trial.py <新试用名> --confirm-trial`。脚本由`calibration/install_calibration.sh`复制到设备，无需单独编译Python。它固定读取`prior_robust_final_20260911/loose.yaml`，校验已审阅矩阵，输出`calibration/trials/<新试用名>/backup/`、`backup_hashes.yaml`、`trial_calibration.yaml`、`expected_runtime_extrinsic.yaml`和`start.sh`；不适用于任意其他候选。运行生成的start.sh，核对会话runtime.yaml的R/t与expected_runtime_extrinsic.yaml一致，再验证视觉输出。回退时停车退出试用入口，原默认rig/estimator未被覆盖，直接使用原入口即可；不要把整棵试用目录的备份覆盖到不同版本工程。
 
 ### 4. 坐标与标定代码约定
 

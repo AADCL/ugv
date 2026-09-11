@@ -464,8 +464,9 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 | 入口/launch | 参数 | 实际功能 |
 |---|---|---|
 | `~/r3live_ws/start_scout_r3live.sh` | 透传所有launch参数 | 设置含新版cv_bridge和相机插件的环境，调用下行入口 |
+| `~/r3live_ws/calibration/trials/indoor_20260911_01/start.sh` | 透传launch参数；自动指定trial_calibration.yaml | 已选六场景loose候选的室内试用；原配置备份在同目录backup/，试用授权不是精度验收 |
 | `scout_r3live_bringup/scout_r3live.launch` | `check_only=false`、`start_lidar=true`、`start_camera=true`、`rig_file`、`output_root=~/r3live_ws/logs` | 唯一用户入口；由session依次启动传感器、生成配置、启动估计器 |
-| `scout_r3live_bringup/sensors.launch` | `start_lidar`、`start_camera` | 引用现有Mid-360驱动和RealSense彩色流；通常不要单独调用 |
+| `scout_r3live_bringup/sensors.launch` | `start_lidar`、`start_camera` | 引用现有Mid-360驱动和r3live_ws内重编的RealSense彩色流；通常不要单独调用 |
 | `scout_r3live_bringup/estimator.launch` | 必填`runtime_config` | 前端＋R³LIVE，不启动任何驱动；隔离回放使用 |
 | 上游`r3live`示例launch | 不作为Scout入口 | 其Avia、示例相机标定及旧话题不适用于本车 |
 
@@ -488,7 +489,7 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 | `/livox/imu` | sensor_msgs/Imu | Livox → mapping、session | Mid-360 IMU，不使用D435i IMU |
 | `/r3live_camera/color/image_raw` | sensor_msgs/Image | 相机 → mapping、session | `r3live_camera_color_optical_frame`，640×480、目标15Hz |
 | `/r3live_camera/color/camera_info` | sensor_msgs/CameraInfo | 相机 → session | 同一彩色流的K/D和尺寸 |
-| `/r3live_camera/color/image_raw/compressed` | sensor_msgs/CompressedImage | 可选image_transport → mapping | 上游兼容订阅；主入口使用raw，不需要另开压缩流 |
+| `/r3live_camera/color/image_raw/compressed` | sensor_msgs/CompressedImage | 相机进程内compressed_image_transport → mapping | 上游同时订阅raw及compressed，首个到达的格式决定处理分支；无需额外节点，但会触发压缩插件执行，必须统一OpenCV |
 | `/r3live/laser_cloud_flat` | sensor_msgs/PointCloud2 | 前端 → mapping | 上游前端标签`livox`；xyz、intensity、curvature(ms)，内部算法输入，无对应新TF广播 |
 | `/r3live/laser_cloud`、`/r3live/laser_cloud_sharp` | sensor_msgs/PointCloud2 | 前端 → 工具 | 上游保留的广告话题；type4不发布全点/边缘支路，不能以其无频率判故障 |
 | `/r3live/odometry` | nav_msgs/Odometry | mapping → session、工具 | `r3live_world`/`r3live_imu`，激光末点时刻；pose有效，twist/协方差不能当成已验证观测 |
@@ -533,7 +534,8 @@ r3live_camera_link ──[RealSense内部TF]──> r3live_camera_color_frame
 | 顺序/现象 | 检查 | 处理 |
 |---|---|---|
 | 1.入口拒绝existing nodes | 原FAST-LIO/fusion/NDT/navigation启动终端 | 停车后退出拥有者；不要逐个强杀节点让原launch残留 |
-| 2.找不到相机包/插件或cv_bridge冲突 | 是否从`start_scout_r3live.sh`启动；ldd输出 | 使用完整入口恢复ROS_PACKAGE_PATH、CMAKE_PREFIX_PATH和正确库顺序 |
+| 2.找不到相机包/插件或cv_bridge冲突 | 是否从`start_scout_r3live.sh`启动；运行check_opencv_runtime.py；rospack find realsense2_camera | 重新执行独立安装脚本；相机应来自r3live_ws/src/realsense-ros，不前置旧realsense_ws |
+| 2a.相机manager exit code -11 | sensors.log、/var/crash中nodelet core；检查/proc/实际相机PID/maps的opencv与cv_bridge | 已发现4.5 cvtColor调用4.2 _OutputArray::create；相机、cv_bridge、三种图像插件全部在独立overlay重编；不要只延长等待或修改外参 |
 | 3.等待CameraInfo或image超时 | USB、相机是否被其他进程占用、sensors.log | 确保D435i彩色流独占；深度或奥比话题不能顶替彩色内参 |
 | 4.时钟粗检失败 | 原始图像/IMU stamp，系统和传感器时间 | 先修时间同步；不篡改消息stamp强行通过 |
 | 5.前端无点云 | `/livox/lidar`类型、point_num、tag/line、blind | 必须是driver2 CustomMsg，非PointCloud2；检查实际扫描点数 |
@@ -541,6 +543,10 @@ r3live_camera_link ──[RealSense内部TF]──> r3live_camera_color_frame
 | 7.RViz报世界帧错误 | Fixed Frame及实际消息header | 用r3live_world；不要把独立局部原点当作odom/map |
 | 8.图像卡顿或CPU过高 | 两路定位是否并开、实际帧率和图像队列 | 保持单入口运行；本版并未证明Jetson所有场景实时性 |
 | 9.能运行但轨迹漂 | 外参/时间标定、视觉跟踪、激光退化和实测基准 | 当前输出正常测试不能代替精度验收；不修改导航参数掩盖问题 |
+
+试用文件约定：`trial_calibration.yaml`的矩阵为`p_camera_optical=T_camera_lidar*p_lidar`，位置单位米；session转换为`T_imu_camera=T_imu_lidar*inverse(T_camera_lidar)`。`status=operator_accepted`表示允许加载，`approval_scope=indoor_trial_only`和`independent_accuracy_validation=not_passed`限定用途；启动生成的`runtime.yaml`需与`expected_runtime_extrinsic.yaml`逐项核对。原外参、入口和哈希在`backup/`及`backup_hashes.yaml`。本试用没有新增导航TF或底盘速度话题。
+
+可选`observe_indoor.py`创建匿名r3live_indoor_observer节点，仅订阅本表的原图、IMU、LIO/相机位姿与跟踪图，不发布任何话题；`--seconds`默认30、允许10～120，`--output`必填且拒绝覆盖。输出连续性和时钟粗检分别报告，定位精度须另有实测基准。可选rosbag还订阅`/r3live_camera/color/metadata`（realsense2_camera/Metadata，相机manager发布，含clock_domain、frame_timestamp、time_of_arrival），用于复核驱动时间；录制不是默认一键入口的一部分。
 
 ## 相机—雷达标定CLI、话题与保护
 

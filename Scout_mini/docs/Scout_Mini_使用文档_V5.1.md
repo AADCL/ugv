@@ -418,7 +418,42 @@ RViz 的 Fixed Frame 设为 `r3live_world`，点云选 `/r3live/cloud_registered
 
 停车后 Ctrl+C。每次日志位于 `~/r3live_ws/logs/<日期时间_唯一后缀>/`：`sensors.log`、`estimator.log`、`runtime.yaml`、`rig_snapshot.yaml`、`sensor_snapshot.json`。默认不录原始bag，不保存可用于现有导航的地图，不启用上游离线网格重建；`output/` 是上游工作目录，不代表已经生成可用地图。
 
-**当前外参是安装尺寸初值，尚未完成相机—雷达空间和时间标定。** 内参来自真实相机，不能因此认为外参也准确。可以验证启动、图像跟踪和输出连续性；尚不能据此宣布比 FAST-LIO 精度高，或认为暗光、扬尘、无纹理走廊已经解决。配置文件及标定关系见开发文档新增章节；参数、全部试验话题与排错见详细信息表。原 BATF-Nav 的建图、保存和导航流程不变。
+**不传calibration_file时，外参仍是安装尺寸初值。** 2026-09-11用户选定六场景loose候选用于室内试用，使用下方专用入口才会加载该矩阵。内参来自真实相机，空间精度及时间偏移尚未独立验收。可以验证启动、图像跟踪和输出连续性；尚不能据此宣布比 FAST-LIO 精度高，或认为暗光、扬尘、无纹理走廊已经解决。配置文件及标定关系见开发文档新增章节；参数、全部试验话题与排错见详细信息表。原 BATF-Nav 的建图、保存和导航流程不变。
+
+### 已选外参的室内试用（2026-09-11）
+
+原rig.yaml、estimator.yaml和启动入口已备份到`~/r3live_ws/calibration/trials/indoor_20260911_01/backup/`。试用选取此前六场景画廊的loose候选，不使用后来墙角批次结果。退出其他定位入口、停车后运行：
+
+```bash
+~/r3live_ws/calibration/trials/indoor_20260911_01/start.sh \
+  output_root:=/home/nvidia/r3live_ws/calibration/trials/indoor_20260911_01/sessions
+```
+
+该入口自动带入trial_calibration.yaml；每次会话保存runtime.yaml及calibration_snapshot.yaml。原配置未覆盖，停车Ctrl+C退出后可恢复原入口。先静止检查至少30秒，确认LIO和camera_odometry持续输出、跟踪图像正常、没有时间倒退/跳变，再遥控低速短距离直行、转弯、返回。请记录实际行驶距离与是否回到起点；轨迹平滑或两路输出一致不等于定位准确。
+
+如提示缺少R3LIVE camera overlay，按开发文档重新执行install_scout_r3live.sh。相机进程exit code -11时先排查OpenCV混用，不要通过反复更换外参或增加等待时间掩盖崩溃。正常入口默认不录bag，录制状态应以实际rosbag进程和输出文件为准。
+
+另一个终端读取30秒对比结果（每次使用新的输出文件名）：
+
+```bash
+source ~/r3live_ws/devel/setup.bash
+python3 ~/r3live_ws/observe_indoor.py --seconds 30 --output /tmp/r3live_check_01.json
+```
+
+`continuous_finite_outputs`检查连续、有限、时间单调及四元数；`sensor_clock_sanity`检查接收时刻与图像/IMU时间的粗偏差（-0.1～0.5秒），不能代替时间标定。`max_displacement_from_first_m`和`max_rotation_from_first_deg`是各自物理原点相对首帧的变化：停车时观察稳定性，行驶时只代表运动量，不能当作真值误差或直接相减。跟踪图的header使用发布时刻，不能用于图像时间对齐。
+
+需要运动复盘时可额外录制原始输入与两路输出，最多10分钟、每1GiB分包；本命令不启动车辆，Ctrl+C可以提前结束。例子会生成带日期的bag，仍应每次使用新的试验前缀：
+
+```bash
+mkdir -p ~/r3live_ws/calibration/trials/indoor_20260911_01/bags
+timeout --signal=INT --kill-after=20s 600s rosbag record --split --size=1024 --buffsize=128 \
+  -o ~/r3live_ws/calibration/trials/indoor_20260911_01/bags/manual_test \
+  /livox/lidar /livox/imu /r3live_camera/color/image_raw \
+  /r3live_camera/color/camera_info /r3live_camera/color/metadata /tf_static \
+  /r3live/odometry /r3live/camera_odometry /rosout
+```
+
+录制结束后用`rosbag info <实际bag路径>`检查消息数量与时长；.bag.active仍表示未完成关闭。raw图像约14MB/s，测试前检查剩余空间。回放只选择必要传感器和内部静态TF，不将记录的旧估计输出重新喂入同名在线估计器。
 
 ## Scout端相机—雷达标定工具
 

@@ -5,9 +5,12 @@ source /home/nvidia/r3live_ws/devel/setup.bash --extend
 if [ -f /home/nvidia/lidar_camera_calib_ws/devel/setup.bash ]; then
   source /home/nvidia/lidar_camera_calib_ws/devel/setup.bash --extend
 fi
-export ROS_PACKAGE_PATH="/home/nvidia/realsense_ws/src:${ROS_PACKAGE_PATH}"
-export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/home/nvidia/realsense_ws/devel/lib"
-export CMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}:/home/nvidia/realsense_ws/devel"
+# Prefer the coherent R3LIVE camera/plugin overlay when installed.
+if [ ! -f /home/nvidia/r3live_ws/devel/lib/librealsense2_camera.so ]; then
+  export ROS_PACKAGE_PATH="/home/nvidia/realsense_ws/src:${ROS_PACKAGE_PATH}"
+  export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/home/nvidia/realsense_ws/devel/lib"
+  export CMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}:/home/nvidia/realsense_ws/devel"
+fi
 export PYTHONPATH="/home/nvidia/r3live_ws/src/scout_r3live_bringup/scripts:${PYTHONPATH}"
 if [ "${1:-}" = refine ]; then
   shift

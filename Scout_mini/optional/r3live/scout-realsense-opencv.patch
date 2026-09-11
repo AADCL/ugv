@@ -1,0 +1,34 @@
+diff --git a/realsense2_camera/CMakeLists.txt b/realsense2_camera/CMakeLists.txt
+index 338528c..01cf388 100644
+--- a/realsense2_camera/CMakeLists.txt
++++ b/realsense2_camera/CMakeLists.txt
+@@ -7,7 +7,7 @@ option(SET_USER_BREAK_AT_STARTUP "Set user wait point in startup (for debug)" OF
+ 
+ add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+ set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
+-
++find_package(OpenCV REQUIRED)
+ find_package(catkin REQUIRED COMPONENTS
+     message_generation
+     nav_msgs
+@@ -88,7 +88,8 @@ include_directories(
+     include
+     ${realsense2_INCLUDE_DIR}
+     ${catkin_INCLUDE_DIRS}
+-    )
++    ${OpenCV_INCLUDE_DIRS}
++)
+ 
+ # RealSense ROS Node
+ catkin_package(
+@@ -120,8 +121,9 @@ target_include_directories(${PROJECT_NAME}
+ target_link_libraries(${PROJECT_NAME}
+     ${realsense2_LIBRARY}
+     ${catkin_LIBRARIES}
++    ${OpenCV_LIBRARIES}
+     ${CMAKE_THREAD_LIBS_INIT}
+-    )
++)
+ 
+ if(WIN32)
+ set_target_properties(${realsense2_LIBRARY} PROPERTIES MAP_IMPORTED_CONFIG_RELWITHDEBINFO RELEASE)
