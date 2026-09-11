@@ -20,6 +20,12 @@ else
   git -C "$task_ws/src/livox_camera_calib" apply --check "$task_assets/scout-calibration.patch"
   git -C "$task_ws/src/livox_camera_calib" apply "$task_assets/scout-calibration.patch"
 fi
+if git -C "$task_ws/src/livox_camera_calib" apply --reverse --check "$task_assets/scout-extraction.patch" 2>/dev/null; then
+  echo 'Scout extraction patch already applied'
+else
+  git -C "$task_ws/src/livox_camera_calib" apply --check "$task_assets/scout-extraction.patch"
+  git -C "$task_ws/src/livox_camera_calib" apply "$task_assets/scout-extraction.patch"
+fi
 source /home/nvidia/r3live_ws/devel/setup.bash --extend
 cd "$task_ws"
 catkin_make -j1 -DCMAKE_BUILD_TYPE=Release

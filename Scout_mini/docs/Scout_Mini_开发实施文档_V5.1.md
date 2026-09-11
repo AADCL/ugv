@@ -781,3 +781,22 @@ bash Scout_mini/optional/r3live/calibration/install_calibration.sh
 prepare建立训练副本和参数快照，统一K/D/帧，拒绝相同点云冒充多个场景。solve使用独立ROS master默认11441，端口占用拒绝，退出只清理其子进程；.solving存在时禁止验收。输出是`p_camera_optical=T_camera_lidar*p_lidar`，R³LIVE转换为`T_imu_camera=T_imu_lidar*inverse(T_camera_lidar)`。默认不发布新TF、不自动启用候选矩阵。project仅固定矩阵投影，近似深度/法向变化边缘距离不是实际外参误差。accept需要独立场景及显式人工确认，输出空间标定文件，不估计时间偏移。
 
 逐条操作、输出目录、恢复方式与全部参数边界见[标定工具完整说明](../optional/r3live/calibration/README.md)。需要改变C++时在固定上游工作树编辑并更新完整patch；只改Python/YAML/launch时重新部署对应完整文件即可。编译成功和合成通过均不代表真实场景精度通过。
+
+### 实测先验约束研究的逐文件开发与部署
+
+源码仍在optional/r3live/calibration。以下是2026-09-11新增完整文件与改动，均已入库；运行系统参数不变。
+
+| 文件 | 写入内容与接口 | 验证 |
+|---|---|---|
+| scout-extraction.patch | 在已应用旧scout-calibration.patch的C++多场景程序加入SCOUT_CALIB_EXTRACT_ONLY分支，输出逐场景平面交线XYZ和图像边缘uv CSV后退出，不优化 | 编译目标lidar_camera_multi_calib，真实六场景提取 |
+| install_calibration.sh | 按顺序幂等应用旧补丁和新增提取补丁；部署完整Python脚本 | 重复安装的reverse --check不重复应用 |
+| calibrate.py | solve内部extract_only参数，在私有master只提取，成功移除.solving，不生成外参结果 | 普通solve保持原行为；refine提取退出和日志 |
+| scout_calibrate.sh | 首参数refine转入prior_refine.py，其余旧命令不变 | refine --help、原--help、bash -n |
+| prior_refine.py | 完整实测基线/中心原点假设、固定样本Chamfer、数据Huber与独立测量先验、三档敏感性、逐一移除训练、固定样本投影、新旧结果对照 | 真实数据完整研究；验证数据不进入拟合 |
+| test_prior_refine.py | 斜线切向零垂距、左乘旋转与平移/杆臂方向、含错误边缘的非零真值恢复、无可靠匹配拒绝 | 端侧python3执行 |
+
+顺序：修改上述完整源码→执行`bash Scout_mini/optional/r3live/calibration/install_calibration.sh`→在~/lidar_camera_calib_ws以`catkin_make -j1 -DCMAKE_BUILD_TYPE=Release`构建C++提取器（安装脚本已执行）→加载该workspace环境和bringup/scripts的PYTHONPATH→执行test_prior_refine.py→运行使用手册的refine命令。完整算法代码就在prior_refine.py，无需再到文档外拼接未提供的实现。只改Python时部署对应完整文件即可，不必重复编译C++。
+
+数学约定：T_camera_lidar的旋转用相机系左增量，平移直接在相机系加偏移。对原实测中心误作IMU原点的情况，仅在研究中减去R_camera_lidar*t_imu_lidar，视外壳中心近似雷达原点，不宣称实际原点相同。数据残差为固定几何交线投影到可靠图像边缘的最近欧氏距离/2px，超过20px保留常数惩罚、不删除样本；Huber阈值2，训练场景等权、总等效权重200；测量先验单独二次惩罚。各轴±3倍假设尺度，最终旋转/平移模长达到约3倍尺度、500次求值内未收敛或拟合前后训练匹配不足30均拒绝。旋转和平移三档尺度为0.5°/5mm、1°/10mm、2°/20mm，明确只是敏感性设置。
+
+避免验证偏差：每场景固定基线视野内、2cm采样、上限2000点的真实平面交线；候选丢失投影按50px计入；输出中位/P90/3px和5px比例/可见数。对照旧run时验证hash、相机、frame、内部杆臂和训练/验证隔离。研究保存.study_incomplete直到全部输出完成；没有accepted文件接口，不自动启用新外参。数学恢复测试验证程序行为，不证明实车厘米级精度。上游VPnP方向残差未在旧路径上修改，新研究独立采用固定样本边缘距离；求解容差ftol/xtol/gtol均为1e-6。

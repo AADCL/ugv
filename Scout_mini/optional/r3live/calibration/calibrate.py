@@ -352,6 +352,7 @@ def solve(args):
     env=os.environ.copy(); env['ROS_MASTER_URI']='http://127.0.0.1:%d'%args.port
     env['ROS_IP']='127.0.0.1'; env.pop('ROS_HOSTNAME',None)
     env['SCOUT_CALIB_HEADLESS']='1'; env['SCOUT_CALIB_OUTPUT']=str(run)
+    if getattr(args,'extract_only',False): env['SCOUT_CALIB_EXTRACT_ONLY']='1'
     env['OMP_NUM_THREADS']='2'
     master=None; worker=None
     marker=run/'.solving'; marker.touch()
@@ -374,6 +375,10 @@ def solve(args):
             print('Solving on private master. Log: '+str(run/'solver.log'),flush=True)
             worker.wait(timeout=args.timeout)
             if worker.returncode: raise ValueError('Solver rejected data or failed; inspect solver.log')
+        if getattr(args,'extract_only',False):
+            marker.unlink()
+            print('EXTRACTION_READY: no extrinsic optimized or accepted')
+            return
         transform=rigid_matrix(np.loadtxt(run/'extrinsic.txt',delimiter=','))
         dump(run/'result.yaml',{'status':'candidate_not_accepted','T_camera_lidar':transform.tolist(),
             'sha256':digest(run/'extrinsic.txt'),'note':'Convergence does not establish accuracy; project held-out scenes'})

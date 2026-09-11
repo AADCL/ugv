@@ -1,0 +1,28 @@
+diff --git a/src/lidar_camera_multi_calib.cpp b/src/lidar_camera_multi_calib.cpp
+index 19a490b..cd8b658 100644
+--- a/src/lidar_camera_multi_calib.cpp
++++ b/src/lidar_camera_multi_calib.cpp
+@@ -225,6 +225,23 @@ int main(int argc, char **argv) {
+     calibs.push_back(single_calib);
+   }
+ 
++  // Export the actual optimizer geometry for independent, prior-constrained
++  // offline estimation. No extrinsic is optimized or accepted in this mode.
++  if (std::getenv("SCOUT_CALIB_EXTRACT_ONLY")) {
++    for (size_t i = 0; i < calibs.size(); ++i) {
++      std::ofstream edges(image_path + "/" + std::to_string(i) + "_edges.csv");
++      std::ofstream pixels(image_path + "/" + std::to_string(i) + "_image_edges.csv");
++      if (!edges || !pixels) { ROS_ERROR("Cannot export diagnostic edges"); return 5; }
++      edges << std::setprecision(17);
++      pixels << std::setprecision(17);
++      for (const auto &p : calibs[i].plane_line_cloud_->points)
++        edges << p.x << "," << p.y << "," << p.z << "\n";
++      for (const auto &p : calibs[i].rgb_egde_cloud_->points)
++        pixels << p.x << "," << -p.y << "\n";
++    }
++    return 0;
++  }
++
+   Eigen::Vector3d init_euler_angle =
+       calibs[0].init_rotation_matrix_.eulerAngles(2, 1, 0);
+   Eigen::Vector3d init_transation = calibs[0].init_translation_vector_;

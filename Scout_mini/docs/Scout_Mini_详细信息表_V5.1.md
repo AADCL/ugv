@@ -579,3 +579,28 @@ r3live_camera_link ──[RealSense内部TF]──> r3live_camera_color_frame
 | 静态对齐、运动错位 | 空间标定未解决时间同步，另行检查；不要修改导航膨胀或控制参数 |
 
 capture检查不代替人工静止确认，也不能检测所有动态场景。标定PCD的2cm体素、0.5～20m距离和视野裁剪只属于本工具，与正式建图参数无关。使用、安装和逐文件开发细节见[标定说明](../optional/r3live/calibration/README.md)。
+
+### refine实测先验研究详细接口
+
+入口`~/r3live_ws/scout_calibrate.sh refine <新研究名>`，独立于原solve/accept。名字1～64位字母数字下划线或横线；同名目录不覆盖。
+
+| 参数/输出 | 完整含义 |
+|---|---|
+| --training 名称… | 至少3组，拟合及逐一移除测试；与验证名字/点云哈希不同 |
+| --validation 名称… | 至少1组，只提取和投影评价，从不加入拟合 |
+| --root | 放在refine后，默认~/r3live_ws/calibration |
+| --port | 默认11443的私有ROS master，仅C++提取期间存在；占用拒绝 |
+| --mount-reference stored-imu | 默认，复现旧rig把实测位置解释为IMU的行为 |
+| --mount-reference lidar-center-hypothesis | 假设实测外壳中心近似雷达原点，减去旧解释额外计入的R*t_imu_lidar；保留旧解释对照，不改运行rig |
+| --compare-runs 名称… | 可选，加入既有result.yaml/extrinsic.txt；校验hash/坐标/相机及独立验证隔离 |
+| 三档先验 | 0.5°/5mm、1°/10mm、2°/20mm；每轴假设尺度，不是测量精度 |
+| 匹配和损失 | 拟合距离20px以上常数惩罚，近邻门限20px；5邻点直线性比>4；像素尺度2px；Huber阈值2；总等效观测权重200、训练场景等权 |
+| 失败判定 | 任一训练场景拟合前后<30匹配；500次求值内不收敛；最终旋转或平移模长≥约3倍假设尺度 |
+| 评价点 | 固定基线FOV内真实几何交线，2cm采样，每场景≤2000；丢失投影罚50px |
+| measured/legacy/tight/medium/loose.yaml | 原点假设基线、旧解释和三档候选；拒绝结果也保留，均不可直接启用 |
+| study.yaml | 全场景指标、候选矩阵、训练留一结果、约束与限制 |
+| comparison/<候选>/<场景>/ | geometric_edges.png（绿图像边，红三维交线）及metrics.yaml |
+| image/*_edges.csv、*_image_edges.csv | C++实际提取的XYZ交线、uv图像边；包括独立验证的提取，但不用于拟合 |
+| .study_incomplete | 研究尚未完整结束；查日志，新名字重做，不移除标记冒充通过 |
+
+没有新增实时订阅、TF或运动话题。C++提取在私有master复用已有上游诊断节点和话题，提取后清理；Python拟合/投影离线运行。没有导航/NDT/FAST-LIO参数变化。研究输出不会生成accepted_calibration.yaml；之前project的近似法向/深度边缘距离与本节真实交线距离不是同一指标，不能混在一列比较。

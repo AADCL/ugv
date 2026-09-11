@@ -458,3 +458,21 @@ RViz 的 Fixed Frame 设为 `r3live_world`，点云选 `/r3live/cloud_registered
 ```
 
 该过程只估计空间外参，未估计时间偏移，不接入NDT或导航。测试目录calibration_test、calibration_synthetic_20260910*里的数据和矩阵不能用于本车正式标定。详细采集规则、旧bag导出、文件结构和错误处理见[标定操作与开发说明](../optional/r3live/calibration/README.md)。
+
+### 实测参数约束研究入口（2026-09-11）
+
+若不同场景求出的外参不稳定，先比较实测基线，不直接采用无约束结果。用户确认雷达位置量到外壳/几何中心；旧rig.yaml却以base_to_imu解释，物理原点尚未精确对应。下面以“测量中心近似为雷达原点”作假设，保留旧解释和旧两次求解对照，不改现有TF、FAST-LIO或导航：
+
+```bash
+~/r3live_ws/scout_calibrate.sh refine prior_robust_final_20260911 \
+  --training scene_00 scene_01 scene_02 validation_02 \
+  --validation validation_00 validation_03 \
+  --mount-reference lidar-center-hypothesis \
+  --compare-runs run_20260911_01 run_20260911_02
+```
+
+首次使用前按标定说明运行install_calibration.sh。以上为已执行研究的名字，复跑改新名字；可以用自己的场景名替换。refine后的`--root`指定数据根目录，默认~/r3live_ws/calibration。训练和验证不重叠；先前叫validation_02的门框数据在本次已用于训练，不再作为独立验收。
+
+程序比较实测基线、旧解释、历史候选和三档先验约束，另做逐一移除训练场景测试。查看`runs/<研究名>/study.yaml`和`comparison/<候选>/<场景>/geometric_edges.png`；绿色为图像边缘，红色为真实平面交线投影。应同时检查多个方向和独立场景，不能仅凭中位像素距离、优化收敛或先验限制后的“小变化”认可精度。失败留下.study_incomplete；保留旧目录，新名字重跑。
+
+该研究入口只生成比较文件，不生成accepted_calibration.yaml，不能直接传给R³LIVE。旋转0.5°/1°/2°和位置5/10/20mm是试验用先验尺度，不是实测精度；外壳中心与厂家雷达原点的偏差仍需核对。完整参数、测试和结果见[标定说明第8节](../optional/r3live/calibration/README.md#8-基于实测安装参数的约束求解与对照2026-09-11)。
