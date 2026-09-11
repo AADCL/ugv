@@ -1,0 +1,220 @@
+Panels:
+  - Class: rviz/Displays
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Global Options1
+        - /LIO pose - IMU origin1
+      Splitter Ratio: 0.55
+  - Class: rviz/Views
+    Name: Views
+  - Class: rviz/Time
+    Name: Time
+    SyncMode: 0
+Visualization Manager:
+  Class: ""
+  Enabled: true
+  Global Options:
+    Background Color: 25; 28; 34
+    Default Light: true
+    Fixed Frame: r3live_world
+    Frame Rate: 20
+  Displays:
+    - Class: rviz/Grid
+      Name: Grid - 1 m
+      Enabled: true
+      Alpha: 0.35
+      Cell Size: 1
+      Plane: XY
+      Plane Cell Count: 60
+      Color: 120; 130; 145
+      Reference Frame: <Fixed Frame>
+      Line Style:
+        Value: Lines
+        Line Width: 0.02
+    - Class: rviz/Axes
+      Name: Local world origin
+      Enabled: true
+      Reference Frame: r3live_world
+      Length: 1
+      Radius: 0.025
+    - Class: rviz/PointCloud2
+      Name: Current registered scan - no accumulation
+      Enabled: true
+      Topic: /r3live/cloud_registered
+      Queue Size: 2
+      Position Transformer: XYZ
+      Color Transformer: FlatColor
+      Color: 210; 225; 235
+      Alpha: 0.8
+      Style: Points
+      Size (Pixels): 2
+      Size (m): 0.025
+      Decay Time: 0
+      Use Fixed Frame: true
+    - Class: rviz/Path
+      Name: LIO trajectory - cyan
+      Enabled: true
+      Topic: /r3live/path
+      Buffer Length: 1
+      Color: 0; 220; 255
+      Alpha: 1
+      Line Style: Billboards
+      Line Width: 0.04
+      Pose Style: None
+    - Class: rviz/Path
+      Name: Camera trajectory - magenta
+      Enabled: true
+      Topic: /r3live/camera_path
+      Buffer Length: 1
+      Color: 255; 90; 210
+      Alpha: 0.9
+      Line Style: Billboards
+      Line Width: 0.025
+      Pose Style: None
+    - Class: rviz/Odometry
+      Name: LIO pose - IMU origin
+      Enabled: true
+      Topic: /r3live/odometry
+      Keep: 1
+      Position Tolerance: 0
+      Angle Tolerance: 0
+      Covariance:
+        Value: false
+      Shape:
+        Value: Axes
+        Axes Length: 0.6
+        Axes Radius: 0.025
+        Alpha: 1
+    - Class: rviz/Odometry
+      Name: Camera pose - optical axes
+      Enabled: true
+      Topic: /r3live/camera_odometry
+      Keep: 1
+      Position Tolerance: 0
+      Angle Tolerance: 0
+      Covariance:
+        Value: false
+      Shape:
+        Value: Axes
+        Axes Length: 0.3
+        Axes Radius: 0.012
+        Alpha: 0.9
+    - Class: rviz/Image
+      Name: Visual feature tracking
+      Enabled: true
+      Image Topic: /r3live/track_image
+      Transport Hint: raw
+      Queue Size: 2
+      Normalize Range: true
+      Min Value: 0
+      Max Value: 1
+    - Class: rviz/Group
+      Name: RGB map chunks 0-4 - enable if needed
+      Enabled: false
+      Displays:
+        - Class: rviz/PointCloud2
+          Name: RGB map 0
+          Enabled: true
+          Topic: /r3live/RGB_map_0
+          Queue Size: 1
+          Position Transformer: XYZ
+          Color Transformer: RGB8
+          Style: Points
+          Size (Pixels): 2
+          Size (m): 0.02
+          Alpha: 1
+          Decay Time: 0
+        - Class: rviz/PointCloud2
+          Name: RGB map 1
+          Enabled: true
+          Topic: /r3live/RGB_map_1
+          Queue Size: 1
+          Position Transformer: XYZ
+          Color Transformer: RGB8
+          Style: Points
+          Size (Pixels): 2
+          Size (m): 0.02
+          Alpha: 1
+          Decay Time: 0
+        - Class: rviz/PointCloud2
+          Name: RGB map 2
+          Enabled: true
+          Topic: /r3live/RGB_map_2
+          Queue Size: 1
+          Position Transformer: XYZ
+          Color Transformer: RGB8
+          Style: Points
+          Size (Pixels): 2
+          Size (m): 0.02
+          Alpha: 1
+          Decay Time: 0
+        - Class: rviz/PointCloud2
+          Name: RGB map 3
+          Enabled: true
+          Topic: /r3live/RGB_map_3
+          Queue Size: 1
+          Position Transformer: XYZ
+          Color Transformer: RGB8
+          Style: Points
+          Size (Pixels): 2
+          Size (m): 0.02
+          Alpha: 1
+          Decay Time: 0
+        - Class: rviz/PointCloud2
+          Name: RGB map 4
+          Enabled: true
+          Topic: /r3live/RGB_map_4
+          Queue Size: 1
+          Position Transformer: XYZ
+          Color Transformer: RGB8
+          Style: Points
+          Size (Pixels): 2
+          Size (m): 0.02
+          Alpha: 1
+          Decay Time: 0
+  Tools:
+    - Class: rviz/Interact
+    - Class: rviz/MoveCamera
+    - Class: rviz/Select
+    - Class: rviz/FocusCamera
+    - Class: rviz/Measure
+  Views:
+    Current:
+      Class: rviz/Orbit
+      Name: Stable world overview
+      Target Frame: r3live_world
+      Distance: 18
+      Pitch: 0.95
+      Yaw: 0.8
+      Near Clip Distance: 0.01
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0
+    Saved:
+      - Class: rviz/TopDownOrtho
+        Name: Top view - trajectory comparison
+        Target Frame: r3live_world
+        Scale: 40
+        Angle: 0
+        X: 0
+        Y: 0
+      - Class: rviz/Orbit
+        Name: Follow IMU - axes include lidar mounting tilt
+        Target Frame: r3live_imu
+        Distance: 10
+        Pitch: 0.95
+        Yaw: 0.8
+        Focal Point:
+          X: 0
+          Y: 0
+          Z: 0
+  Value: true
+Window Geometry:
+  Width: 1280
+  Height: 800
+  X: 40
+  Y: 40
+  Hide Left Dock: false
+  Hide Right Dock: false

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Scout R3LIVE Viewer
+Comment=R3LIVE point cloud, trajectories and visual tracking
+Exec=/home/nvidia/r3live_ws/view_scout_r3live.sh /home/nvidia/Desktop/Scout_R3LIVE.rviz
+Icon=rviz
+Terminal=false
+Categories=Science;Robotics;

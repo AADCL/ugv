@@ -465,6 +465,7 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 |---|---|---|
 | `~/r3live_ws/start_scout_r3live.sh` | 透传所有launch参数 | 设置含新版cv_bridge和相机插件的环境，调用下行入口 |
 | `~/r3live_ws/start_scout_r3live_test.sh` | 默认已选六场景外参、record_bag=true、test_duration=600、试用sessions目录 | 充电后直接实车测试的入口；自动检查和录包，旧试用start.sh也转到此入口 |
+| `~/r3live_ws/view_scout_r3live.sh` | 可选.rviz路径；默认包内config/Scout_R3LIVE.rviz | 只启动系统环境RViz；120桌面配置和快捷入口已部署。默认订阅当前扫描、两路path/odom和track_image，可选RGB_map_0～4；不发送初始位姿/导航目标 |
 | `~/r3live_ws/calibration/trials/indoor_20260911_01/start.sh` | 透传launch参数；自动指定trial_calibration.yaml | 已选六场景loose候选的室内试用；原配置备份在同目录backup/，试用授权不是精度验收 |
 | `scout_r3live_bringup/scout_r3live.launch` | check_only=false、start_lidar=true、start_camera=true、calibration_file空、rig_file、output_root=~/r3live_ws/logs、record_bag=false、test_duration=600 | session拥有传感器、检查、估计器和可选录包；实车使用墙钟，不允许use_sim_time |
 | `scout_r3live_bringup/sensors.launch` | `start_lidar`、`start_camera` | 引用现有Mid-360驱动和r3live_ws内重编的RealSense彩色流；通常不要单独调用 |

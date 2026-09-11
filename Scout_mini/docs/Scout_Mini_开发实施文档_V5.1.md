@@ -686,6 +686,8 @@ python3 src/scout_odom_fusion/test/test_isolated_ekf.py --profile wheel_priority
 | `scout-r3live.patch` | 所有上游修改的完整统一diff，保留上游许可；不能只应用其中一部分 |
 | `start_scout_r3live.sh` | source独立overlay，要求存在新相机库；不前置旧相机包路径，ldd检查后通过flock非阻塞锁执行独立launch；重复入口在注册同名ROS节点之前退出75 |
 | `start_scout_r3live_test.sh` | 专用实车入口，校验已选试用外参文件存在，设置record_bag=true、test_duration=600和试用sessions目录；全部ROS参数仍可透传 |
+| `config/Scout_R3LIVE.rviz` | 世界系固定视角、当前扫描、两路轨迹/原点、跟踪图及可选5块RGB地图；不加入没有消费端的初始位姿/导航工具 |
+| `view_scout_r3live.sh`、`Scout_R3LIVE.desktop` | 仅启动RViz；清除继承的C++ overlay搜索路径后加载系统ROS插件，防止将R³LIVE的cv_bridge注入RViz；保留ROS网络及显示环境 |
 | `scout-realsense-opencv.patch` | 在相机CMakeLists显式查找OpenCV，将其include和library加入目标；随overlay的cv_bridge统一版本，不修改旧realsense_ws |
 | `check_opencv_runtime.py` | 用ldd检查相机、cv_bridge、三种图像插件及mapping；缺库或不是单一OpenCV4.5时失败 |
 | `calibration/prepare_indoor_trial.py` | 核对用户选定六场景loose矩阵、备份默认配置及哈希、新建独立试用外参和start.sh；拒绝重复目录，试用授权不表示精度验收 |

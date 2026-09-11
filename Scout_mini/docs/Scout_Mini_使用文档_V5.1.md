@@ -416,6 +416,12 @@ rosrun tf tf_echo r3live_world r3live_imu
 
 RViz 的 Fixed Frame 设为 `r3live_world`，点云选 `/r3live/cloud_registered`，轨迹选 `/r3live/path`。这里是独立局部原点，里程计位置对应 **雷达IMU原点**，不是 `base_link`；不能直接与旧系统XY相减，也不能直接代替导航输入。相机驱动内部TF另成一棵树，当前没有把试验坐标系接入 `map/odom`。
 
+120桌面保存`Scout_R3LIVE.rviz`及`Scout_R3LIVE.desktop`（Scout R3LIVE Viewer快捷入口）。已启动定位后，可双击快捷入口，或执行`~/r3live_ws/view_scout_r3live.sh ~/Desktop/Scout_R3LIVE.rviz`。已有RViz可通过File → Open Config打开桌面的.rviz。不要使用上游示例的/world、/path、/aft_mapped_to_init、/RGB_map_N话题。
+
+配置默认显示当前配准点云（不累积旧扫描）、青色LIO轨迹、紫红色相机轨迹、两路原点坐标轴、视觉跟踪图和1米网格；关闭未经验证的里程计协方差显示。轨迹分别对应IMU与相机原点，两条线间的杆臂偏移不是定位误差。初始视角固定世界坐标，Views可选择俯视或跟随IMU；后者会包含雷达安装倾角。车离开视野时用FocusCamera或切换跟随视角。默认不启用RGB全局地图以减轻Jetson负载，需要时勾选RGB map chunks 0-4组；只显示这5个分块，更大地图须按实际/r3live/RGB_map_N增加显示项。配置没有2D Pose Estimate或导航目标工具，因为当前R³LIVE不消费这些重定位/导航命令。
+
+当前R³LIVE不提供可直接使用的旧地图全局重定位或完整回环后端；重启产生新的局部原点，也不能承诺跟踪丢失后自动找回地图位置。后续可适配已有NDT：将R³LIVE的世界系/IMU位姿和点云统一到原定位接口，再由NDT估计map→odom。现有FAST-LIO链路的NDT不会自动作用到独立R³LIVE。
+
 停车后 Ctrl+C。每次日志位于 `~/r3live_ws/logs/<日期时间_唯一后缀>/`：`sensors.log`、`estimator.log`、`runtime.yaml`、`rig_snapshot.yaml`、`sensor_snapshot.json`、`ready.json`、`health.json`和`session_result.json`。通用start_scout_r3live.sh默认不录bag，下面的专用test入口自动录制。不保存可用于现有导航的地图，不启用上游离线网格重建；`output/` 是上游工作目录，不代表已经生成可用地图。
 
 **不传calibration_file时，外参仍是安装尺寸初值。** 2026-09-11用户选定六场景loose候选用于室内试用，使用下方专用入口才会加载该矩阵。内参来自真实相机，空间精度及时间偏移尚未独立验收。可以验证启动、图像跟踪和输出连续性；尚不能据此宣布比 FAST-LIO 精度高，或认为暗光、扬尘、无纹理走廊已经解决。配置文件及标定关系见开发文档新增章节；参数、全部试验话题与排错见详细信息表。原 BATF-Nav 的建图、保存和导航流程不变。
