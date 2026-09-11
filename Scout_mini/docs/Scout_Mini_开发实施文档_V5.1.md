@@ -6,6 +6,18 @@
 > Scout 车端工作空间：`/home/nvidia/livox_fastlio`。
 > 本文按“复制什么、打开什么、编译什么、测试什么”组织，面向第一次接触本项目的开发者。
 
+## 0. 工作空间整理实施（2026-09-11）
+
+三个独立空间物理迁入 `~/livox_fastlio/optional/`，保留原 src/build/devel 和旧路径兼容链接，不合并 OpenCV 环境。CCS 完全保留。
+
+修改文件 `optional/r3live/start_scout_r3live_test.sh`：将配置输入改到 `config/accepted_20260911/trial_calibration.yaml`，输出改到 `logs/indoor_tests`；健康检查、录包和600秒上限不变。完整脚本已入库，仅shell路径修改，无需catkin编译。当前外参、来源候选和全部原配置backup在删除测试数据前已经复制并逐文件哈希核对。
+
+`optional/r3live/install_scout_r3live.sh` 增加首次安装时复制 `config/accepted_20260911`，已有设备配置不覆盖；`calibration/prepare_indoor_trial.py` 增加历史研究数据缺失提示，防止继续执行旧打包步骤。此次保留的外参YAML也已入库，原配置恢复包另存设备和本地。
+
+迁移源码、逐文件操作和后续编译命令见[工作空间指南](../tools/workspace/WORKSPACE_GUIDE.md)，脚本在 `tools/workspace/`。设备清单在 `~/livox_fastlio/maintenance/cleanup_20260911_175821/`。旧bag/场景/画廊/测试日志已经永久删除，历史回放步骤需要从其他副本恢复数据或重新采集。当前采用 `start_scout_r3live_test.sh`，无需重新运行历史候选打包脚本。
+
+验证范围为shell语法、分环境包发现、OpenCV依赖和外参哈希；本次不启动硬件。后续C++修改仍从原兼容目录执行 `catkin_make -j1`，保持CMake缓存一致。
+
 ## 1. V5.1 正式架构
 
 ```text
@@ -741,7 +753,7 @@ python3 ~/github_upload/ugv/Scout_mini/optional/r3live/check_opencv_runtime.py ~
 
 2026-09-11真机发现旧相机nodelet在compressed图像发布时SIGSEGV：core回溯为OpenCV4.5的cvtColor调用4.2的_OutputArray::create，且旧RealSense库直接链接两版OpenCV。修复范围为独立overlay内的相机与插件，不修改原导航工作空间。仅检查mapping的ldd不足以验收整条图像链路，必须再检查相机进程`/proc/<PID>/maps`及真实图像订阅。
 
-室内试用部署：先完成上述安装，再运行`python3 ~/r3live_ws/calibration_tools/prepare_indoor_trial.py <新试用名> --confirm-trial`。脚本由`calibration/install_calibration.sh`复制到设备，无需单独编译Python。它固定读取`prior_robust_final_20260911/loose.yaml`，校验已审阅矩阵，输出`calibration/trials/<新试用名>/backup/`、`backup_hashes.yaml`、`trial_calibration.yaml`、`expected_runtime_extrinsic.yaml`和`start.sh`；不适用于任意其他候选。运行生成的start.sh，核对会话runtime.yaml的R/t与expected_runtime_extrinsic.yaml一致，再验证视觉输出。回退时停车退出试用入口，原默认rig/estimator未被覆盖，直接使用原入口即可；不要把整棵试用目录的备份覆盖到不同版本工程。
+历史候选打包流程（所需原始研究数据已清理，当前设备直接使用start_scout_r3live_test.sh；下述仅保留开发记录）：先完成上述安装，再运行`python3 ~/r3live_ws/calibration_tools/prepare_indoor_trial.py <新试用名> --confirm-trial`。脚本由`calibration/install_calibration.sh`复制到设备，无需单独编译Python。它固定读取`prior_robust_final_20260911/loose.yaml`，校验已审阅矩阵，输出`calibration/trials/<新试用名>/backup/`、`backup_hashes.yaml`、`trial_calibration.yaml`、`expected_runtime_extrinsic.yaml`和`start.sh`；不适用于任意其他候选。运行生成的start.sh，核对会话runtime.yaml的R/t与expected_runtime_extrinsic.yaml一致，再验证视觉输出。回退时停车退出试用入口，原默认rig/estimator未被覆盖，直接使用原入口即可；不要把整棵试用目录的备份覆盖到不同版本工程。
 
 2026-09-11充电期间的入口收尾：直接编辑上表完整文件后运行安装脚本，它复制Python、launch、两种入口并执行catkin_make -j1。CMakeLists.txt将calibration_io.py和runtime_health.py一起安装到catkin可执行目录，避免安装空间缺少辅助模块。无需修改R³LIVE C++定位算法或重新标定。已存在试用目录的start.sh只改为`exec /home/nvidia/r3live_ws/start_scout_r3live_test.sh "$@"`；原文件已在`calibration/runtime_hardening_20260911/before_fix.tar.gz`中备份。
 

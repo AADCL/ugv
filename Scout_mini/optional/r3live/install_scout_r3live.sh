@@ -47,6 +47,11 @@ fi
 cp -a "$task_assets/scout_r3live_bringup" "$task_ws/src/"
 cp "$task_assets/start_scout_r3live.sh" "$task_ws/"
 cp "$task_assets/start_scout_r3live_test.sh" "$task_ws/"
+# Install the reviewed trial only if no device-selected calibration exists.
+if [ ! -e "$task_ws/config/accepted_20260911" ]; then
+  mkdir -p "$task_ws/config"
+  cp -a "$task_assets/config/accepted_20260911" "$task_ws/config/"
+fi
 cp "$task_assets/view_scout_r3live.sh" "$task_ws/"
 cp "$task_assets/check_opencv_runtime.py" "$task_assets/observe_indoor.py" "$task_ws/"
 chmod +x "$task_ws/start_scout_r3live.sh" "$task_ws/src/scout_r3live_bringup/scripts/session.py"

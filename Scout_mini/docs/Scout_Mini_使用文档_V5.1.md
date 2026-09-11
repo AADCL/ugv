@@ -4,6 +4,10 @@
 
 > 本文用于日常建图、地图生成、重定位和导航。V5.1 使用实测雷达中心离地 `0.48 m` 和轮胎总高 `0.15 m`。
 
+## 0. 120 端目录更新（2026-09-11）
+
+三个独立空间已迁入 `~/livox_fastlio/optional/{r3live_ws,realsense_ws,lidar_camera_calib_ws}`，旧 home 路径保留为兼容软链接。CCS、导航参数及正式地图保留。历史 bag 和测试派生数据已删除。当前试用外参在 `~/r3live_ws/config/accepted_20260911/`，新试用记录在 `~/r3live_ws/logs/indoor_tests/`。入口仍为 `~/r3live_ws/start_scout_r3live_test.sh`。完整布局见[工作空间指南](../tools/workspace/WORKSPACE_GUIDE.md)。
+
 ## 1. 使用前检查
 
 登录 Scout Jetson 后执行：
@@ -428,13 +432,13 @@ RViz 的 Fixed Frame 设为 `r3live_world`，点云选 `/r3live/cloud_registered
 
 ### 已选外参的室内试用（2026-09-11）
 
-原rig.yaml、estimator.yaml和启动入口已备份到`~/r3live_ws/calibration/trials/indoor_20260911_01/backup/`。试用选取此前六场景画廊的loose候选，不使用后来墙角批次结果。退出其他定位入口、停车后运行：
+原rig.yaml、estimator.yaml和启动入口已备份到`~/r3live_ws/config/accepted_20260911/backup/`。试用选取此前六场景画廊的loose候选，不使用后来墙角批次结果。退出其他定位入口、停车后运行：
 
 ```bash
 ~/r3live_ws/start_scout_r3live_test.sh
 ```
 
-该入口自动带入trial_calibration.yaml并录bag，旧`calibration/trials/indoor_20260911_01/start.sh`也转到此流程。每次使用新会话目录，保存runtime.yaml及calibration_snapshot.yaml，不覆盖原配置。停车等待READY，再遥控低速短距离直行、转弯、返回。请记录实际行驶距离与是否回到起点；轨迹平滑或两路输出一致不等于定位准确。
+该入口自动带入trial_calibration.yaml并录bag，旧trial目录已删除，当前外参读取`config/accepted_20260911/trial_calibration.yaml`，输出写入`logs/indoor_tests`。每次使用新会话目录，保存runtime.yaml及calibration_snapshot.yaml，不覆盖原配置。停车等待READY，再遥控低速短距离直行、转弯、返回。请记录实际行驶距离与是否回到起点；轨迹平滑或两路输出一致不等于定位准确。
 
 启动自动完成两阶段检查：原图、雷达和IMU连续正常至少5秒；随后两路位姿也连续正常至少5秒，再显示READY。各阶段最多等60秒。检查非零/单调源时间、坐标帧、位姿有限值、四元数及接收延迟。READY后持续检查：断流超过2秒、时间倒退/重复、系统时间跳变或非法位姿会锁定失效，停止本次估计并关闭bag。不会自动重启或发送停车指令；看到RUNTIME_INVALID请人工停车。
 
@@ -458,9 +462,9 @@ python3 ~/r3live_ws/observe_indoor.py --seconds 30 --output /tmp/r3live_check_01
 需要运动复盘时可额外录制原始输入与两路输出，最多10分钟、每1GiB分包；本命令不启动车辆，Ctrl+C可以提前结束。例子会生成带日期的bag，仍应每次使用新的试验前缀：
 
 ```bash
-mkdir -p ~/r3live_ws/calibration/trials/indoor_20260911_01/bags
+mkdir -p ~/r3live_ws/logs/manual_bags
 timeout --signal=INT --kill-after=20s 600s rosbag record --split --size=1024 --buffsize=128 \
-  -o ~/r3live_ws/calibration/trials/indoor_20260911_01/bags/manual_test \
+  -o ~/r3live_ws/logs/manual_bags/manual_test \
   /livox/lidar /livox/imu /r3live_camera/color/image_raw \
   /r3live_camera/color/camera_info /r3live_camera/color/metadata /tf_static \
   /r3live/odometry /r3live/camera_odometry /rosout

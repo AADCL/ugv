@@ -17,6 +17,9 @@ a=p.parse_args()
 if not a.confirm_trial: p.error('Explicit authorization for indoor trial is required')
 ws=Path('/home/nvidia/r3live_ws')
 run=ws/'calibration/runs/prior_robust_final_20260911'
+if not (run/'loose.yaml').is_file():
+    p.error('Historical study data was cleaned. Use ~/r3live_ws/start_scout_r3live_test.sh '
+            'with the preserved config/accepted_20260911, or collect a new study.')
 candidate=read(run/'loose.yaml'); manifest=read(run/'manifest.yaml')
 if (run/'.study_incomplete').exists() or candidate['status']!='candidate_not_accepted':
     raise ValueError('Incomplete or rejected study candidate')

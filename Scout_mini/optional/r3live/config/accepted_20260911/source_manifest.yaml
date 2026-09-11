@@ -1,0 +1,80 @@
+schema: 1
+training_scenes:
+- scene_00
+- scene_01
+- scene_02
+- validation_02
+camera:
+  width: 640
+  height: 480
+  K:
+  - 603.01416015625
+  - 0.0
+  - 320.65093994140625
+  - 0.0
+  - 603.141845703125
+  - 235.57579040527344
+  - 0.0
+  - 0.0
+  - 1.0
+  D:
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  distortion_model: plumb_bob
+  optical_frame: r3live_camera_color_optical_frame
+lidar_frame: livox_frame
+lidar_to_imu_translation:
+- -0.011
+- -0.02329
+- 0.04412
+initial_T_camera_lidar:
+- - 0.011667847269817538
+  - -0.9999024315105157
+  - -0.007680416619361057
+  - 0.036280878855017976
+- - 0.7113117223394803
+  - 0.013698173537485384
+  - -0.702743191859003
+  - -0.13941275646291734
+- - 0.7027798339469701
+  - 0.0027363298587124475
+  - 0.7114021489258897
+  - 0.0048983678476949045
+- - 0.0
+  - 0.0
+  - 0.0
+  - 1.0
+scene_hashes:
+- 57033691913ea9933099c30650f90754589805aed2f7ba537deeac2eab908d02
+- 36617dd3d7557efff74107a62801dff760ad9bce2aca4dd08ebf2eaae8ebe257
+- 5b0926fd9d69fe8101877eacee11791126256377e2fb820011ec31f1904b8a21
+- f2749a3d177f7a69eb4f1c7235cc6ede0a6523823ec2c241b1acc657eb106007
+status: prepared_not_calibrated
+validation_scenes:
+- validation_00
+- validation_03
+purpose: Independent prior sensitivity study; extraction includes validation, fitting
+  never does
+mount_reference: lidar-center-hypothesis
+study_prior_T_camera_lidar:
+- - 0.011667847269817538
+  - -0.9999024315105157
+  - -0.007680416619361057
+  - 0.013460357526352267
+- - 0.7113117223394803
+  - 0.013698173537485384
+  - -0.702743191859003
+  - -0.10026426743067582
+- - 0.7027798339469701
+  - 0.0027363298587124475
+  - 0.7114021489258897
+  - -0.018694387667089266
+- - 0.0
+  - 0.0
+  - 0.0
+  - 1.0
+origin_caveat: Casing/geometric center was measured; physical offset to manufacturer
+  LiDAR origin is unknown. Never assume it was IMU origin.

@@ -1,0 +1,54 @@
+schema: 1
+status: operator_accepted
+approval_scope: indoor_trial_only
+convention: p_camera_optical = T_camera_lidar * p_lidar
+T_camera_lidar:
+- - 0.014183137267383399
+  - -0.998928415965608
+  - 0.04405517442589314
+  - 0.004579043956485155
+- - 0.7287335940743439
+  - -0.019841731744050316
+  - -0.684509791419295
+  - -0.10586853916919002
+- - 0.6846504126083209
+  - 0.04181298192952107
+  - 0.72767127678466
+  - 0.004208719896754375
+- - 0.0
+  - 0.0
+  - 0.0
+  - 1.0
+camera:
+  width: 640
+  height: 480
+  K:
+  - 603.01416015625
+  - 0.0
+  - 320.65093994140625
+  - 0.0
+  - 603.141845703125
+  - 235.57579040527344
+  - 0.0
+  - 0.0
+  - 1.0
+  D:
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  distortion_model: plumb_bob
+  optical_frame: r3live_camera_color_optical_frame
+lidar_frame: livox_frame
+lidar_to_imu_translation:
+- -0.011
+- -0.02329
+- 0.04412
+accepted_utc: '2026-09-11T07:33:33.656884+00:00'
+source_candidate_sha256: f6d6000e5faa5d2b5ca12723fda84d28427c71e15352699c8f2803dd7dfed28c
+time_calibration: not_estimated
+independent_accuracy_validation: not_passed
+note: User explicitly authorized this reviewed candidate for an indoor trial. Operator
+  acceptance is deployment permission, not a claim of calibration accuracy. Original
+  defaults are backed up and unchanged.

@@ -4,6 +4,21 @@
 
 > 本表对应2026-09-08源码和Scout V5.1部署基线。正式架构为可逆贝叶斯静态点、轨迹自由证据、离线鲁棒地面重建、PGM静态占据、保存坡度软代价、当前帧Terrain Guard、GlobalPlanner、TEB和安全逃逸恢复。
 
+## 0. 工作目录与数据状态（2026-09-11）
+
+| 项目 | 当前路径/状态 |
+|---|---|
+| R³LIVE及其相机overlay | `~/livox_fastlio/optional/r3live_ws` |
+| 原导航相机空间 | `~/livox_fastlio/optional/realsense_ws` |
+| 标定C++空间 | `~/livox_fastlio/optional/lidar_camera_calib_ws` |
+| 旧home工作空间路径 | 三个兼容软链接，必须保留以支持现有编译缓存 |
+| 当前外参及backup | `~/r3live_ws/config/accepted_20260911/` |
+| 新室内测试数据 | `~/r3live_ws/logs/indoor_tests/<会话>/` |
+| 旧bag/标定导出/测试记录 | 已清理，历史路径不能直接回放 |
+| 正式maps、CCS | 保留 |
+
+话题、节点、TF发布者和导航参数未因迁移改变。目录及编译边界见[工作空间指南](../tools/workspace/WORKSPACE_GUIDE.md)。
+
 ## 1. 平台信息
 
 | 项目 | 当前值 |
@@ -466,7 +481,7 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 | `~/r3live_ws/start_scout_r3live.sh` | 透传所有launch参数 | 设置含新版cv_bridge和相机插件的环境，调用下行入口 |
 | `~/r3live_ws/start_scout_r3live_test.sh` | 默认已选六场景外参、record_bag=true、test_duration=600、试用sessions目录 | 充电后直接实车测试的入口；自动检查和录包，旧试用start.sh也转到此入口 |
 | `~/r3live_ws/view_scout_r3live.sh` | 可选.rviz路径；默认包内config/Scout_R3LIVE.rviz | 只启动系统环境RViz；120桌面配置和快捷入口已部署。默认订阅当前扫描、两路path/odom和track_image，可选RGB_map_0～4；不发送初始位姿/导航目标 |
-| `~/r3live_ws/calibration/trials/indoor_20260911_01/start.sh` | 透传launch参数；自动指定trial_calibration.yaml | 已选六场景loose候选的室内试用；原配置备份在同目录backup/，试用授权不是精度验收 |
+| `~/r3live_ws/start_scout_r3live_test.sh` | 透传launch参数；自动指定trial_calibration.yaml | 已选六场景loose候选的室内试用；原配置备份在config/accepted_20260911/backup/，试用授权不是精度验收 |
 | `scout_r3live_bringup/scout_r3live.launch` | check_only=false、start_lidar=true、start_camera=true、calibration_file空、rig_file、output_root=~/r3live_ws/logs、record_bag=false、test_duration=600 | session拥有传感器、检查、估计器和可选录包；实车使用墙钟，不允许use_sim_time |
 | `scout_r3live_bringup/sensors.launch` | `start_lidar`、`start_camera` | 引用现有Mid-360驱动和r3live_ws内重编的RealSense彩色流；通常不要单独调用 |
 | `scout_r3live_bringup/estimator.launch` | 必填`runtime_config` | 前端＋R³LIVE，不启动任何驱动；隔离回放使用 |

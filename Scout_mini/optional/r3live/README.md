@@ -1,5 +1,7 @@
 # Scout R³LIVE 独立试验
 
+2026-09-11：120物理工作空间已迁入 `~/livox_fastlio/optional/r3live_ws`，旧 `~/r3live_ws` 为兼容链接。试用外参保存在 `config/accepted_20260911/`，运行 `start_scout_r3live_test.sh`；新测试数据在 `logs/indoor_tests/`。历史bag和标定导出已清理，配置备份保留。参见[目录指南](../../tools/workspace/WORKSPACE_GUIDE.md)。
+
 官方R³LIVE（不是R³LIVE++），Mid-360＋D435i彩色流，Ubuntu20.04/Noetic/Jetson ARM64。
 
 ```bash
