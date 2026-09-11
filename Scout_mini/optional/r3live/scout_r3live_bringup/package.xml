@@ -15,6 +15,10 @@
   <build_depend>sensor_msgs</build_depend>
   <exec_depend>scout_tf_manager</exec_depend>
   <exec_depend>scout_system_bringup</exec_depend>
+  <exec_depend>scout_bringup</exec_depend>
+  <exec_depend>scout_pointcloud_mapper</exec_depend>
+  <exec_depend>scout_navigation</exec_depend>
+  <exec_depend>map_server</exec_depend>
   <exec_depend>r3live</exec_depend>
   <exec_depend>rospy</exec_depend>
   <exec_depend>rosnode</exec_depend>

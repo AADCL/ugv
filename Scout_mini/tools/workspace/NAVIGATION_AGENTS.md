@@ -14,8 +14,14 @@
   existing public odometry/cloud interfaces and camera_init -> body TF. FAST-LIO
   and R3LIVE interface modes are mutually exclusive. Native R3LIVE TF is isolated
   on /r3live/tf_raw; do not relay it back or start a second TF/pose/cloud adapter.
-- /fastlio_odom is a legacy pose-only interface name; under R3LIVE it carries
-  transformed R3LIVE data. No NDT/navigation or wheel fusion starts automatically.
+- /fastlio_odom is a legacy pose-only name; under R3LIVE it carries transformed
+  R3LIVE data. The test entry starts no chassis/NDT/navigation. The four explicit
+  scout_r3live_{local,mapping,localization,navigation}.launch operational entries
+  in scout_system_bringup run continuously and add the selected pipeline after
+  local warmup. Navigation includes localization; never stack a second launch.
+- Operational launches reuse unchanged chassis/NDT/navigation configurations and
+  start no wheel fusion. Mapping refuses nonempty directories; stop and wait for
+  mapper saving, then finalize separately. Preserve full map bundle guards.
 - User authorized deletion of historical bags and derivatives on 2026-09-11;
   do not treat this as authorization to delete future recordings.
 - CCS `/home/nvidia/ccs_edge_ws` must not be changed.

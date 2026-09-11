@@ -390,6 +390,38 @@ rosrun scout_system_bringup scout_fusion_test.py
 
 若只想观察已经运行的三路里程计而不启动任何硬件，可单独执行`rosrun scout_odom_fusion compare_odometry.py`，但必须自行确认没有重复对比节点；这不能保证当前系统中NDT已关闭。`scout_fusion_test.py --check-only`只执行启动前检查，不启动硬件。
 
+## R³LIVE 配套一键入口（2026-09-11）
+
+日常功能入口与FAST-LIO同放在`scout_system_bringup`，在原Scout终端直接运行即可。脚本自动加载独立R³LIVE/OpenCV环境，默认使用已选六场景外参，无需额外启动接口适配或TF。
+
+```bash
+# 仅局部定位：雷达、相机、R³LIVE、工程接口、底盘，无NDT
+roslaunch scout_system_bringup scout_r3live_local.launch
+
+# 建图：加Bayesian静态建图；使用新的地图名称
+roslaunch --sigint-timeout=90 scout_system_bringup scout_r3live_mapping.launch map_name:=r3live_map_01
+
+# 已有地图定位：加NDT及地图，不启动move_base；indor是120当前保留地图
+roslaunch scout_system_bringup scout_r3live_localization.launch map_name:=indor
+
+# 完整导航：一次启动局部估计、底盘、NDT、地图、地形感知和TEB
+roslaunch scout_system_bringup scout_r3live_navigation.launch map_name:=indor
+```
+
+四条命令是互斥选择，不要依次叠加执行。完整导航入口已经包含定位和导航，不能再另外启动原`scout_localization.launch`或`navigation_teb.launch`。启动前停车退出原整套入口，静止等待READY。READY只说明局部估计与启动检查通过；导航前仍在导航RViz用2D Pose Estimate设置/核对全局初始位置，再发送目标。
+
+四个新入口默认持续运行，不再10分钟自动退出；默认不录bag。`record_bag:=true`可录输入/位姿/TF及底盘和基本导航状态，磁盘低于3GiB会结束运行。`start_chassis:=false`只在有明确外部底盘驱动或无底盘测试时使用；导航仍要求新鲜`/scout/odom`。`check_only:=true`只做配置、冲突和地图检查，不启动硬件。新入口先检查地图再启动传感器，局部估计预热成功后才启动底盘及模式对应功能。
+
+建图结束时停车、释放遥控，Ctrl+C并等待mapper完成保存；上例给roslaunch 90秒退出宽限，避免大地图尚在写盘时父进程结束。然后执行原流程：
+
+```bash
+rosrun scout_map_tools finalize_map.py r3live_map_01
+```
+
+建图拒绝覆盖非空地图目录，重复测试换新map_name。NDT/导航会检查地图完整性和容量失败标记，保持原map_bundle_guard规则。完整导航的车体尺寸、速度、TEB及膨胀参数全部沿用当前FAST-LIO导航配置。日志在`~/livox_fastlio/optional/r3live_ws/logs/<local|mapping|localization|navigation>/<会话>/`，新增`operation_pipeline.log`；session_result.json记录operation_mode。
+
+下面的旧`start_scout_r3live_test.sh`仍是限时、不带底盘/NDT/导航的独立测试入口，与这四个持续运行入口用途不同。
+
 ## 独立 R³LIVE 试验入口（2026-09-10）
 
 本入口是官方 **R³LIVE** 的 Scout/ARM64/Mid-360 适配版，不是 R³LIVE++。FAST-LIO 的原入口继续保留，按场景选一套运行。R³LIVE 使用自己的激光惯性与视觉估计，不是在当前 FAST-LIO 输出上再接一个相机节点。当前接入的是设备实连的 **D435i 彩色流**，不是奥比深度相机；本分支不使用深度图。

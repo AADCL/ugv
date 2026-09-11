@@ -1,0 +1,43 @@
+<launch>
+  <!-- Session starts this only after sensor/estimator/interface warmup succeeds. -->
+  <arg name="operation_mode" />
+  <arg name="map_name" />
+  <arg name="map_dir" />
+  <arg name="start_chassis" default="true" />
+  <include if="$(arg start_chassis)" file="$(find scout_bringup)/launch/scout_mini_robot_base.launch">
+    <arg name="odom_topic_name" value="/scout/odom" />
+    <arg name="pub_tf" value="false" />
+  </include>
+  <group if="$(eval arg('operation_mode') == 'mapping')">
+    <include file="$(find scout_pointcloud_mapper)/launch/pointcloud_mapper.launch">
+      <arg name="map_name" value="$(arg map_name)" />
+      <arg name="output_path" value="$(arg map_dir)/filtered_camera_init.pcd" />
+      <arg name="trajectory_output_path" value="$(arg map_dir)/traversed_path_map.pcd" />
+    </include>
+  </group>
+  <group if="$(eval arg('operation_mode') in ['localization', 'navigation'])">
+    <node pkg="scout_system_bringup" type="map_bundle_guard.py"
+          name="scout_r3live_localization_map_bundle_guard" output="screen" required="true">
+      <param name="map_dir" value="$(arg map_dir)" />
+      <param name="check_period" value="1.0" />
+      <rosparam param="required_files" subst_value="true">
+        - "$(arg map_dir)/map_metadata.yaml"
+        - "$(arg map_dir)/public_map.pcd"
+        - "$(arg map_dir)/map.yaml"
+        - "$(arg map_dir)/map.pgm"
+      </rosparam>
+    </node>
+    <include file="$(find scout_system_bringup)/launch/scout_relocalization.launch">
+      <arg name="map_pcd" value="$(arg map_dir)/public_map.pcd" />
+    </include>
+    <node pkg="map_server" type="map_server" name="scout_map_server"
+          args="$(arg map_dir)/map.yaml" output="screen">
+      <remap from="map" to="/map_2d" />
+    </node>
+  </group>
+  <include if="$(eval arg('operation_mode') == 'navigation')"
+           file="$(find scout_navigation)/launch/navigation_teb.launch">
+    <arg name="map_name" value="$(arg map_name)" />
+    <arg name="map_dir" value="$(arg map_dir)" />
+  </include>
+</launch>

@@ -13,5 +13,11 @@ test -f "$task_workspace/devel/lib/librealsense2_camera.so" || {
 python3 "$task_workspace/check_opencv_runtime.py" "$task_workspace"
 # Acquire before roslaunch registers its fixed session node; otherwise a second
 # launch could shut down the first node before the Python conflict check runs.
+if [ "${1:-}" = --session-node ]; then
+  shift
+  # Called as a node by the main workspace launch; preserve __name/__log remaps.
+  exec flock --no-fork --nonblock --conflict-exit-code 75 "$task_workspace/.scout_r3live.lock" \
+    rosrun scout_r3live_bringup session.py "$@"
+fi
 exec flock --nonblock --conflict-exit-code 75 "$task_workspace/.scout_r3live.lock" \
   roslaunch scout_r3live_bringup scout_r3live.launch "$@"

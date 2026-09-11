@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Independent test entry; no motion commands, no automatic takeover of running nodes."""
+"""R3LIVE supervisor: explicit test/operation modes, no takeover of existing nodes."""
 import json
 import math
 import os
@@ -24,6 +24,7 @@ import yaml
 sys.path.insert(0,str(Path(__file__).resolve().parent))
 from calibration_io import load_accepted
 from runtime_health import RuntimeHealth, SENSORS, ALL_STREAMS
+from operation_contract import validate_mode, prepare_pipeline
 
 
 def transform(description):
@@ -39,6 +40,7 @@ def transform(description):
 def main():
     rospy.init_node('scout_r3live_session')
     processes=[]
+    shutdown_timeouts={}
     handles=[]
     subscribers=[]
     directory=None
@@ -50,12 +52,16 @@ def main():
             raise RuntimeError('Live session requires wall time; use estimator.launch for isolated bag replay')
         nodes=rosnode.get_node_names()
         project_interface=rospy.get_param('~project_interface',True)
+        operation_mode=rospy.get_param('~operation_mode','test')
+        start_chassis=rospy.get_param('~start_chassis',True)
         forbidden={'laserMapping','scout_shadow_ekf','scout_fusion_guard','move_base',
                    'scout_global_localizer','r3live_mapping','r3live_lidar_front_end'}
         if project_interface:
             forbidden.update({'scout_r3live_project_interface','scout_tf_manager',
                               'scout_geometry_tf_publisher','scout_pose_adapter',
                               'scout_cloud_adapter','scout_pointcloud_mapper'})
+        if operation_mode!='test' and start_chassis:
+            forbidden.add('scout_base_node')
         conflicts=[n for n in nodes if n.rsplit('/',1)[-1] in forbidden]
         if rospy.get_param('~start_lidar',True):
             conflicts += [n for n in nodes if 'livox_lidar_publisher' in n]
@@ -82,11 +88,18 @@ def main():
             raise ValueError('Selected calibration file is missing: '+calibration_file)
         record_bag=rospy.get_param('~record_bag',False)
         test_duration=float(rospy.get_param('~test_duration',600.0))
-        if not math.isfinite(test_duration) or not 30 <= test_duration <= 1800:
-            raise ValueError('test_duration must be 30..1800 seconds')
+        validate_mode(operation_mode,test_duration,project_interface)
+        pipeline_arguments=None
+        if operation_mode!='test':
+            if not calibration_file:
+                raise ValueError('Operational launch requires an explicit calibration_file')
+            map_name=rospy.get_param('~map_name','r3live_map_01')
+            map_dir=rospy.get_param('~map_dir',str(Path.home()/'livox_fastlio/maps'/map_name))
+            pipeline_arguments=prepare_pipeline(package,rospkg.RosPack().get_path('scout_system_bringup'),
+                operation_mode,map_name,map_dir,start_chassis)
         if rospy.get_param('~check_only',False):
-            rospy.loginfo('PREFLIGHT_OK; configuration only, no live checks. Calibration: %s; record_bag=%s',
-                          calibration_file or rig['calibration_status'],record_bag)
+            rospy.loginfo('PREFLIGHT_OK; configuration/map only, no live checks. mode=%s; calibration=%s; record_bag=%s',
+                          operation_mode,calibration_file or rig['calibration_status'],record_bag)
             outcome='preflight_only'
             return 0
         root=Path(rospy.get_param('~output_root',str(Path.home()/'r3live_ws/logs'))).expanduser()
@@ -95,8 +108,8 @@ def main():
         minimum_free=3*1024**3+int((test_duration+240)*24*1024**2) if record_bag else 512*1024**2
         if shutil.disk_usage(directory).free < minimum_free:
             raise RuntimeError('Insufficient free disk space for bounded test recording')
-        rospy.logwarn('R3LIVE evaluation; project_interface=%s; NDT/navigation are not started. Logs: %s',
-                      project_interface,directory)
+        rospy.logwarn('R3LIVE mode=%s; project_interface=%s; operation starts after local warmup. Logs: %s',
+                      operation_mode,project_interface,directory)
 
         def spawn(name,command):
             handle=(directory/(name+'.log')).open('w')
@@ -104,10 +117,12 @@ def main():
             process=subprocess.Popen(command,
                                      stdout=handle,stderr=subprocess.STDOUT,start_new_session=True)
             processes.append(process)
+            shutdown_timeouts[process.pid]=80 if name=='operation_pipeline' else 15
             return process
 
         def launch(name,arguments):
-            return spawn(name,['roslaunch','scout_r3live_bringup',name+'.launch']+arguments)
+            options=['--sigint-timeout=60','--sigterm-timeout=15'] if name=='operation_pipeline' else []
+            return spawn(name,['roslaunch']+options+['scout_r3live_bringup',name+'.launch']+arguments)
 
         def receive(name,msg):
             # Copy receipt/source scalars immediately; never edit the ROS message.
@@ -153,7 +168,8 @@ def main():
                 '/livox/lidar','/livox/imu','/r3live_camera/color/image_raw',
                 '/r3live_camera/color/camera_info','/r3live_camera/color/metadata','/tf_static',
                 '/r3live/odometry','/r3live/camera_odometry','/rosout'] +
-                (['/tf','/r3live/tf_raw','/Odometry','/fastlio_odom'] if project_interface else []))
+                (['/tf','/r3live/tf_raw','/Odometry','/fastlio_odom'] if project_interface else []) +
+                (['/scout/odom','/cmd_vel','/initialpose','/move_base/status'] if operation_mode!='test' else []))
         wait_stable(SENSORS,60)
         listener=tf.TransformListener()
         rospy.loginfo('Waiting for camera calibration and image (up to 45 seconds); keep stationary.')
@@ -220,9 +236,23 @@ def main():
                                            for p in directory.glob('*.bag*')):
             raise RuntimeError('Recorder has not created a non-empty bag')
         health.arm(time.monotonic())
+        if pipeline_arguments is not None:
+            # Repeat the map check immediately before consumers start. No child
+            # launched above owns the chassis, mapper, NDT or move_base.
+            pipeline_arguments=prepare_pipeline(package,rospkg.RosPack().get_path('scout_system_bringup'),
+                operation_mode,map_name,map_dir,start_chassis)
+            launch('operation_pipeline',pipeline_arguments)
+            if start_chassis or operation_mode=='navigation':
+                wheel=rospy.wait_for_message('/scout/odom',Odometry,timeout=10)
+                if (wheel.header.stamp.is_zero() or
+                        not -.1 <= (rospy.Time.now()-wheel.header.stamp).to_sec() <= 1.0):
+                    raise RuntimeError('Chassis odometry is not fresh')
+            if any(p.poll() is not None for p in processes) or health.check(time.monotonic()):
+                raise RuntimeError('Operation failed during startup; inspect operation_pipeline.log')
         ready_time=time.monotonic()
         (directory/'ready.json').write_text(json.dumps(health.snapshot(ready_time),indent=2))
-        rospy.loginfo('READY: continuous LIO/visual poses and source clocks checked. Manual low-speed test only; no accuracy certification. Recording=%s; duration=%.0fs',record_bag,test_duration)
+        rospy.loginfo('READY: mode=%s; local estimate checked, global initial pose still needs operator verification. Recording=%s; duration=%.0fs (0=continuous)',
+                      operation_mode,record_bag,test_duration)
         report_time=ready_time
         while not rospy.is_shutdown():
             if any(p.poll() is not None for p in processes):
@@ -233,7 +263,7 @@ def main():
                 raise RuntimeError('RUNTIME_INVALID: '+json.dumps(fault))
             if record_bag and shutil.disk_usage(directory).free < 3*1024**3:
                 raise RuntimeError('Disk reserve reached; stopping test and closing bag')
-            if now-ready_time >= test_duration:
+            if test_duration>0 and now-ready_time >= test_duration:
                 outcome='duration_complete'
                 rospy.logwarn('Test duration complete; ending estimation and recording. Park manually.')
                 break
@@ -255,8 +285,10 @@ def main():
         for process in reversed(processes):
             if process.poll() is None:
                 os.killpg(process.pid,signal.SIGINT)
-                try: process.wait(timeout=15)
+                try: process.wait(timeout=shutdown_timeouts[process.pid])
                 except subprocess.TimeoutExpired:
+                    outcome='failed'
+                    error_text='A child exceeded shutdown grace; inspect logs and any map saving result'
                     os.killpg(process.pid,signal.SIGTERM)
                     try: process.wait(timeout=5)
                     except subprocess.TimeoutExpired:
@@ -266,7 +298,7 @@ def main():
         for subscriber in subscribers: subscriber.unregister()
         if directory is not None:
             report=health.snapshot(time.monotonic())
-            report.update(outcome=outcome,error=error_text,
+            report.update(outcome=outcome,error=error_text,operation_mode=operation_mode,
                           bags=[p.name for p in directory.glob('*.bag')],
                           incomplete_bags=[p.name for p in directory.glob('*.bag.active')])
             (directory/'session_result.json').write_text(json.dumps(report,indent=2))

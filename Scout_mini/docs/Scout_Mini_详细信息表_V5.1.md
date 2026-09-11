@@ -478,6 +478,11 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 
 | 入口/launch | 参数 | 实际功能 |
 |---|---|---|
+| `scout_system_bringup/scout_r3live_local.launch` | 公共操作参数见下文 | 完整局部估计＋底盘，无NDT、mapper和move_base |
+| `scout_system_bringup/scout_r3live_mapping.launch` | map_name默认r3live_map_01 | 局部估计＋底盘＋Bayesian mapper，退出保存，finalize仍单独执行 |
+| `scout_system_bringup/scout_r3live_localization.launch` | map_name指定已有完整地图 | 局部估计＋底盘＋NDT＋/map_2d，无move_base |
+| `scout_system_bringup/scout_r3live_navigation.launch` | map_name指定已有完整地图 | 包含定位及原navigation_teb全套；不得另开定位/导航入口 |
+| `scout_r3live_bringup/operation_pipeline.launch` | operation_mode、map_name、map_dir、start_chassis | 内部入口，由session在局部预热后启动；自身不包含R³LIVE、传感器、TF manager或pose adapter |
 | `~/r3live_ws/start_scout_r3live.sh` | 透传所有launch参数 | 设置含新版cv_bridge和相机插件的环境，调用下行入口 |
 | `~/r3live_ws/start_scout_r3live_test.sh` | 已选六场景外参、record_bag=true、test_duration=600、project_interface=true | 自动检查和录包；读取config/accepted_20260911，输出logs/indoor_tests；原配置backup同保留配置目录 |
 | `~/r3live_ws/view_scout_r3live.sh` | 可选.rviz路径；默认包内config/Scout_R3LIVE.rviz | 只启动系统环境RViz；120桌面配置和快捷入口已部署。默认订阅当前扫描、两路path/odom和track_image，可选RGB_map_0～4；不发送初始位姿/导航目标 |
@@ -488,6 +493,10 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 | 上游`r3live`示例launch | 不作为Scout入口 | 其Avia、示例相机标定及旧话题不适用于本车 |
 
 关闭两个start开关时只使用已存在的传感器输入，不创建空传感器launch；这用于隔离回放/受控测试，不绕过已有定位节点的冲突检查。
+
+四个`scout_system_bringup/scout_r3live_*.launch`共同参数：`map_dir=~/livox_fastlio/maps/<map_name>`、`start_chassis=true`、`record_bag=false`、`check_only=false`、`calibration_file=~/livox_fastlio/optional/r3live_ws/config/accepted_20260911/trial_calibration.yaml`、`output_root=~/livox_fastlio/optional/r3live_ws/logs/<模式>`。内部固定`project_interface=true`、`test_duration=0`（持续运行），不能关闭接口后仍启动工程消费者。未开始真实功能前检查地图；mapping拒绝非空目标，localization/navigation复用原地图验证函数。
+
+操作模式的session在本地预热通过后启动operation_pipeline；该子launch先于估计器退出，建图节点执行原保存逻辑。默认底盘发布/scout/odom且pub_tf=false，TEB仍从/scout/odom取速度。导航入口复用原navigation_teb.launch，所有move_base参数与原入口一致。没有启动影子轮速融合。
 
 | 节点 | 包/可执行文件 | 职责/退出关系 |
 |---|---|---|
@@ -501,6 +510,11 @@ mapper私有服务为`/scout_pointcloud_mapper/save_map`和`/scout_pointcloud_ma
 | `/scout_r3live_project_interface` | scout_r3live_bringup/project_interface_node | 精确同步扫描/位姿、首帧对齐、公共话题及TF；required，数据失效时退出，不自动换原点 |
 | `/scout_geometry_tf_publisher` | scout_tf_manager/geometry_tf_publisher.py | 复用scout_geometry.yaml的odom→camera_init；不得另开第二份 |
 | `/scout_tf_manager` | scout_tf_manager/tf_manager.py | 复用extrinsics.yaml的body→base_link、base_link→terrain_sensor |
+| `/scout_base_node` | scout_base/scout_base_node | 四个操作入口start_chassis=true时由pipeline启动；只占一份CAN驱动 |
+| `/scout_pointcloud_mapper` | scout_pointcloud_mapper/pointcloud_mapper_node | 仅mapping模式，消费公共配准点/位姿并保存原格式静态PCD和轨迹 |
+| `/scout_r3live_localization_map_bundle_guard` | scout_system_bringup/map_bundle_guard.py | localization/navigation模式，持续检查PCD、PGM、YAML和失败标记 |
+| `/scout_map_loader`、`/scout_global_localizer`、`/scout_map_server` | 原scout_relocalization及map_server | localization/navigation模式；NDT独占map→odom，地图发布/map_2d |
+| `/move_base`、导航地形节点及`/scout_navigation_map_bundle_guard` | 原navigation_teb.launch | 仅navigation操作模式，完整列表和话题沿用前文导航表 |
 
 下表P为发布者，S为订阅者；“工具”指按需启动的RViz/rostopic/记录程序，频率不是硬性保证。
 
@@ -564,7 +578,7 @@ odom
 | body→r3live_camera_optical | 适配节点，静态 | 本次实际选中的T_imu_camera，不用相机动态Odometry再广播第二条边 |
 | body→r3live_camera_link | 适配节点，静态 | T_imu_camera_optical × inverse(T_camera_link_optical) |
 | r3live_camera_link以下内部帧 | RealSense | 出厂TF，适配节点不重复发布 |
-| map→odom | 本入口无发布者 | 后续只由原NDT负责，禁止补单位变换伪造全局定位 |
+| map→odom | localization/navigation操作模式由原NDT发布 | local/mapping及旧独立test入口没有此边，禁止补单位变换伪造全局定位 |
 
 R³LIVE原始动态TF保留在`/r3live/tf_raw`，主TF中的r3live_imu经body连接，不能同时把原动态边接回主树。首帧车体在odom下为零位姿；既有车体安装参数沿用近似几何，并未因本次接口适配获得精确标定。原始相机位姿和LIO可能存在估计差异，静态光学TF不代表二者在任意时刻完全一致。
 

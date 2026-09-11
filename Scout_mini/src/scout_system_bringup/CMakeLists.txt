@@ -165,6 +165,8 @@ catkin_install_python(PROGRAMS
   scripts/scout_mapping_session.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
+install(PROGRAMS scripts/scout_r3live_entry.sh DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
+install(DIRECTORY launch config DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
 
 ## Mark executables for installation
 ## See http://docs.ros.org/melodic/api/catkin/html/howto/format1/building_executables.html

@@ -735,6 +735,63 @@ python3 src/scout_odom_fusion/test/test_isolated_ekf.py --profile wheel_priority
 
 ### 3. 安装与编译
 
+#### R³LIVE 配套功能 launch（2026-09-11）
+
+新增四个公共入口，均在原`scout_system_bringup`内，原终端无需额外source另一套工作空间。入口通过环境桥接脚本调用R³LIVE session节点，避免主ROS环境提前混入OpenCV4.5；同一进程锁在节点注册前防止第二套入口抢占名称。
+
+| 完整仓库路径 | 写入内容/职责 |
+|---|---|
+| `Scout_mini/src/scout_system_bringup/launch/scout_r3live_local.launch` | operation_mode=local，工程接口＋底盘，持续运行 |
+| 同目录`scout_r3live_mapping.launch` | operation_mode=mapping，另启Bayesian mapper |
+| 同目录`scout_r3live_localization.launch` | operation_mode=localization，另启NDT与地图，保留map_bundle_guard |
+| 同目录`scout_r3live_navigation.launch` | operation_mode=navigation，包含NDT定位及原navigation_teb，不得叠加第二套导航 |
+| `Scout_mini/src/scout_system_bringup/scripts/scout_r3live_entry.sh` | 验证optional工作空间安装，exec其start_scout_r3live.sh --session-node；保留ROS的__name/__log重映射 |
+| `Scout_mini/src/scout_system_bringup/CMakeLists.txt` | 安装上述shell入口及launch/config目录，无导航算法变更 |
+| `Scout_mini/optional/r3live/start_scout_r3live.sh` | 新增--session-node内部方式；环境与OpenCV检查后，持锁rosrun session.py；原默认限时测试方式仍走scout_r3live.launch |
+| `Scout_mini/optional/r3live/scout_r3live_bringup/launch/operation_pipeline.launch` | 仅组合底盘、mapper或NDT/地图/导航，不再启动传感器、R³LIVE或TF manager |
+| 同包`scripts/operation_contract.py` | 校验模式/时长、地图名称、新建图目标；解析真实pipeline中guard参数，调用原map_bundle_guard.startup_errors，启动前验证实际所需文件 |
+| 同包`scripts/session.py` | operation_mode默认test；操作模式允许duration=0持续运行，要求显式外参及工程接口；预热后启动pipeline，检查轮速新鲜度，退出时先停pipeline再停估计器 |
+| 同包`CMakeLists.txt`、`package.xml` | 安装operation_contract模块，声明底盘/mapper/导航/map_server运行依赖 |
+| `Scout_mini/optional/r3live/test_operation_launches.py` | 组合、非覆盖/损坏地图拒绝、导航参数相等及四入口check_only测试；只使用私有ROS master，不启动硬件 |
+
+公共launch的核心契约如下，四个入口只有operation_mode和日志子目录不同：
+
+```text
+operation_mode: local | mapping | localization | navigation
+project_interface: true
+test_duration: 0                 # 操作模式持续运行；原test仍限30..1800秒
+start_chassis: true              # /scout/odom，pub_tf=false
+record_bag: false
+calibration_file: ~/livox_fastlio/optional/r3live_ws/config/accepted_20260911/trial_calibration.yaml
+map_dir: ~/livox_fastlio/maps/<map_name>
+```
+
+启动顺序：冲突/外参/地图预检 → 传感器预热 → 生成runtime和标定快照 → R³LIVE及工程接口预热 → 再次地图检查 → operation_pipeline → 检查新鲜轮速 → READY。NDT地图匹配和全局初始位姿仍须现场确认，READY不是全局定位精度验收。mapper要求新目录，拒绝静默覆盖已有地图。持续模式录bag时沿用磁盘余量检查，并增加/scout/odom、/cmd_vel、/initialpose和/move_base/status；默认关闭录包。所有地图处理、NDT、TEB、速度、车体和膨胀参数沿用旧配置。
+
+退出先关闭pipeline，使mapper保存、导航停止，再关闭估计器、录包及传感器。大地图建图入口推荐给外层roslaunch `--sigint-timeout=90`，并等待保存完成；保存后仍单独执行finalize_map.py，不在shutdown期间并行启动转换。原独立test入口仍不启动pipeline、底盘或NDT。
+
+增量部署与编译（先备份同名设备文件，以下完整源码均在仓库）：
+
+```bash
+cd ~/github_upload/ugv
+cp -a Scout_mini/src/scout_system_bringup/. ~/livox_fastlio/src/scout_system_bringup/
+cp -a Scout_mini/optional/r3live/scout_r3live_bringup/. ~/r3live_ws/src/scout_r3live_bringup/
+cp Scout_mini/optional/r3live/start_scout_r3live.sh ~/r3live_ws/
+chmod +x ~/livox_fastlio/src/scout_system_bringup/scripts/scout_r3live_entry.sh
+source /opt/ros/noetic/setup.bash
+source ~/livox_fastlio/devel/setup.bash
+cd ~/livox_fastlio
+catkin_make -j1 --pkg scout_system_bringup
+source ~/r3live_ws/devel/setup.bash
+cd ~/r3live_ws
+catkin_make -j1 --pkg scout_r3live_bringup -DR3LIVE_BUILD_MESHING=OFF
+python3 ~/github_upload/ugv/Scout_mini/optional/r3live/test_operation_launches.py
+# 单独预检已有地图（无硬件）：
+roslaunch scout_system_bringup scout_r3live_navigation.launch map_name:=indor check_only:=true
+```
+
+测试默认只读复制120的indor地图到临时目录；其他设备通过环境变量SCOUT_TEST_MAP_DIRECTORY指定完整地图。三项综合测试通过：四模式无重复节点/无FAST-LIO和重复TF，全部move_base参数与原navigation_teb相同，非空目标和不完整地图拒绝，四个公开入口在私有11339端口成功PREFLIGHT_OK。测试后自动退出私有ROS实例。未启动CAN、传感器、NDT或move_base，真实建图保存和导航仍待现场验收。
+
 ```bash
 cd ~/github_upload/ugv
 bash Scout_mini/optional/r3live/install_scout_r3live.sh

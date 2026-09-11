@@ -6,7 +6,18 @@
 
 工程接口默认开启（`project_interface:=true`）：保留全部`/r3live/*`原始输出，并提供`/Odometry`、`/fastlio_odom`、三种`/cloud_registered*`点云和现有odom→camera_init→body→base_link链。原始动态TF隔离至`/r3live/tf_raw`，相机安装TF使用本次实际外参。首帧车体在odom下归零；适配不增加点云降采样。切回纯独立观察用`project_interface:=false`。
 
-独立入口不启动NDT、底盘、轮速融合、Bayesian mapper或导航。公共里程计仍为pose-only；`/fastlio_odom`是历史兼容名称，此模式下数据来自R³LIVE。完整话题/TF表、增量编译与转换公式分别见三大手册；[合成验证报告](TEST_REPORT_PROJECT_INTERFACE_20260911.md)不代表实车精度验收。
+原独立test入口不启动NDT、底盘、轮速融合、Bayesian mapper或导航。新增四个持续运行入口，直接在原Scout环境使用（四选一）：
+
+```bash
+roslaunch scout_system_bringup scout_r3live_local.launch
+roslaunch --sigint-timeout=90 scout_system_bringup scout_r3live_mapping.launch map_name:=r3live_map_01
+roslaunch scout_system_bringup scout_r3live_localization.launch map_name:=indor
+roslaunch scout_system_bringup scout_r3live_navigation.launch map_name:=indor
+```
+
+四入口自动加载R³LIVE环境和已选外参，默认带底盘、不录bag，持续到人工退出。mapping加Bayesian mapper；localization加NDT及地图；navigation包括完整定位和原TEB导航，不再另开第二套。建图退出保存后执行`rosrun scout_map_tools finalize_map.py r3live_map_01`。`check_only:=true`可先做无硬件预检。导航参数沿用原工程。
+
+公共里程计仍为pose-only；`/fastlio_odom`是历史兼容名称，当前数据来自R³LIVE。完整话题/TF表、增量编译与转换公式见三大手册；[合成验证报告](TEST_REPORT_PROJECT_INTERFACE_20260911.md)不代表实车精度验收。
 
 ```bash
 cd ~/github_upload/ugv

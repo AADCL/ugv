@@ -1,0 +1,23 @@
+<launch>
+  <!-- A complete, mutually exclusive R3LIVE operation. No FAST-LIO include. -->
+  <arg name="map_name" default="r3live_map_01" />
+  <arg name="map_dir" default="$(env HOME)/livox_fastlio/maps/$(arg map_name)" />
+  <arg name="start_chassis" default="true" />
+  <arg name="record_bag" default="false" />
+  <arg name="check_only" default="false" />
+  <arg name="calibration_file" default="$(env HOME)/livox_fastlio/optional/r3live_ws/config/accepted_20260911/trial_calibration.yaml" />
+  <arg name="output_root" default="$(env HOME)/livox_fastlio/optional/r3live_ws/logs/mapping" />
+  <node pkg="scout_system_bringup" type="scout_r3live_entry.sh"
+        name="scout_r3live_session" output="screen" required="true">
+    <param name="operation_mode" value="mapping" />
+    <param name="project_interface" value="true" />
+    <param name="test_duration" value="0" />
+    <param name="map_name" value="$(arg map_name)" />
+    <param name="map_dir" value="$(arg map_dir)" />
+    <param name="start_chassis" value="$(arg start_chassis)" />
+    <param name="record_bag" value="$(arg record_bag)" />
+    <param name="check_only" value="$(arg check_only)" />
+    <param name="calibration_file" value="$(arg calibration_file)" />
+    <param name="output_root" value="$(arg output_root)" />
+  </node>
+</launch>
